@@ -1,0 +1,110 @@
+name: CEM CI + GitHub Sync
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  scan-and-sync:
+    runs-on: cem-latest
+
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan Git history for secrets
+        shell: bash
+        run: |
+          set -e
+
+          echo "Scanning full Git history..."
+          gitleaks git . --redact
+
+          echo "Secret scan passed."
+
+      - name: Sync current branch to GitHub
+        shell: bash
+        env:
+          SYNC_GITHUB_REPO: ${{ vars.SYNC_GITHUB_REPO }}
+        run: |
+          set -e
+
+          if [ -z "$SYNC_GITHUB_REPO" ]; then
+            echo "ERROR: SYNC_GITHUB_REPO is not configured."
+            exit 1
+          fi
+
+          if [ ! -f /run/secrets/forgejo-runner-infisical.env ]; then
+            echo "ERROR: Infisical runner credentials are not mounted."
+            exit 1
+          fi
+
+          set -a
+          source /run/secrets/forgejo-runner-infisical.env
+          set +a
+
+          export INFISICAL_DISABLE_UPDATE_CHECK=true
+
+          INFISICAL_TOKEN="$(infisical login \
+            --domain="$INFISICAL_API_URL" \
+            --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --silent \
+            --plain)"
+
+          if [ -z "$INFISICAL_TOKEN" ]; then
+            echo "ERROR: Could not authenticate to Infisical."
+            exit 1
+          fi
+
+          export INFISICAL_TOKEN
+          export SYNC_GITHUB_REPO
+          export FORGEJO_REF_NAME
+
+          infisical run \
+            --domain="$INFISICAL_API_URL" \
+            --projectId="c68d54a0-be34-4200-ad20-7ce8b5b1b885" \
+            --env=prod \
+            --token="$INFISICAL_TOKEN" \
+            -- \
+            bash -c '
+              set -e
+
+              if [ -z "$SYNC_GH_TOKEN" ]; then
+                echo "ERROR: SYNC_GH_TOKEN was not injected by Infisical."
+                exit 1
+              fi
+
+              if [ -z "$SYNC_GITHUB_REPO" ]; then
+                echo "ERROR: SYNC_GITHUB_REPO is empty."
+                exit 1
+              fi
+
+              BRANCH="$FORGEJO_REF_NAME"
+
+              if [ -z "$BRANCH" ]; then
+                echo "ERROR: Could not determine current branch."
+                exit 1
+              fi
+
+              GITHUB_URL="https://github.com/${SYNC_GITHUB_REPO}.git"
+
+              git remote remove github 2>/dev/null || true
+              git remote add github "$GITHUB_URL"
+
+              AUTH="$(printf "x-access-token:%s" "$SYNC_GH_TOKEN" | base64 | tr -d "\n")"
+
+              echo "Destination: $SYNC_GITHUB_REPO"
+              echo "Branch: $BRANCH"
+              echo "Pushing to GitHub..."
+
+              git \
+                -c http.extraHeader="Authorization: Basic $AUTH" \
+                push github \
+                "HEAD:refs/heads/$BRANCH"
+
+              echo "GitHub sync successful."
+            '
