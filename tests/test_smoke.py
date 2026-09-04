@@ -390,7 +390,8 @@ class ImporterConversionTests(unittest.TestCase):
             self.assertIn("**Repères :** HTML · CSS", converted)
             self.assertIn("> [!tip] Important", converted)
             self.assertIn("Projet Web — étape 2", converted)
-            self.assertIn("Widget de rétroaction en ligne omis", converted)
+            self.assertNotIn("Rétroaction du site", converted)
+            self.assertNotIn("Widget de rétroaction en ligne omis", converted)
             self.assertIn("plan.pdf", converted)
             self.assertNotIn("<StyleSwitcher", converted)
             self.assertFalse(importer.report.unknown_components)
@@ -945,6 +946,112 @@ Texte gauche.
             self.assertIn("Ce paragraphe doit rester du texte normal.", converted)
             self.assertNotIn("        ### Environnements", converted)
             self.assertNotIn("        Ce paragraphe", converted)
+
+    def test_420_sn1_four_colon_nested_admonitions_render_as_callouts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs" / "01-cours"
+            docs.mkdir(parents=True)
+            note = docs / "01-rencontre1.mdx"
+            note.write_text(
+                '<Tabs>\n'
+                '    <TabItem value="variables" label="Variables">\n\n'
+                '        ::::info Syntaxe pour créer une variable\n\n'
+                '        Il faut écrire le nom de la variable.\n\n'
+                '        ```python\n'
+                '        nom_de_ma_variable = expression\n'
+                '        ```\n'
+                '        - `nom_de_ma_variable` est unique.\n\n'
+                '        :::tip\n'
+                "        L'opérateur `=` est évalué après l'expression.\n"
+                '        :::\n\n'
+                '        Exemples :\n\n'
+                '        ```python\n'
+                '        x = 5 * 6\n'
+                '        ```\n\n'
+                '        ::::     \n'
+                '    </TabItem>\n'
+                '</Tabs>\n',
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("> [!info] Syntaxe pour créer une variable", converted)
+            self.assertIn("> > [!tip]", converted)
+            self.assertIn("> ```python\n> nom_de_ma_variable = expression\n> ```", converted)
+            self.assertNotIn("::::", converted)
+            self.assertNotIn("    Il faut écrire", converted)
+
+    def test_420_sn1_nt_admonitions_are_supported(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs"
+            docs.mkdir(parents=True)
+            note = docs / "x.mdx"
+            note.write_text(
+                ":::info-nt Information\nTexte.\n:::\n\n"
+                ":::tip-nt Astuce\nConseil.\n:::\n\n"
+                ":::danger-nt Danger\nAttention.\n:::\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("> [!info] Information", converted)
+            self.assertIn("> [!tip] Astuce", converted)
+            self.assertIn("> [!danger] Danger", converted)
+            self.assertNotIn("-nt", converted)
+
+    def test_generated_asset_links_are_not_re_reported_as_unresolved(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs" / "01-cours"
+            static = root / "web" / "static" / "img"
+            docs.mkdir(parents=True)
+            static.mkdir(parents=True)
+            (static / "capture.png").write_bytes(b"fake")
+            note = docs / "x.mdx"
+            note.write_text("<img src={require('/img/capture.png').default} alt=\"Capture\" />\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("_assets", converted)
+            payload = json.loads((importer.report_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(payload["issues"]["unresolved_local_links"], 0)
+
+    def test_docusaurus_baseurl_prefixed_static_image_resolves(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs"
+            static = root / "web" / "static" / "img"
+            docs.mkdir(parents=True)
+            static.mkdir(parents=True)
+            (static / "logo.svg").write_text("<svg></svg>", encoding="utf-8")
+            note = docs / "accueil.mdx"
+            note.write_text('<img src="/420-SN1/img/logo.svg" alt="Logo" />\n', encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("logo.svg", converted)
+            self.assertNotIn("/420-SN1/img/logo.svg", converted)
+            self.assertNotIn("Image Docusaurus introuvable", self.report(importer))
+
+    def test_feedback_widget_is_omitted_without_placeholder_noise(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs"
+            docs.mkdir(parents=True)
+            note = docs / "x.mdx"
+            note.write_text("Avant\n<Feedback surveyId=\"x\" />\nAprès\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("Avant", converted)
+            self.assertIn("Après", converted)
+            self.assertNotIn("Feedback", converted)
+            self.assertNotIn("Rétroaction", converted)
+
 
     def test_empty_mermaid_fence_is_removed(self):
         cleaned = CEMImporter.cleanup_whitespace("Avant\n\n```mermaid\n\n```\n\nAprès\n")

@@ -555,6 +555,13 @@ class CEMImporter:
         text = source_text
         text = self.remove_import_lines(text)
         text = self.strip_zero_width_markers(text)
+        # Normalize raw TabItem bodies before any component handler can replace an
+        # indented JSX line with zero-indented Markdown.  420-SN1 contains large mixed
+        # tabs (prose + admonitions + code + images + Feedback); once one early handler
+        # escapes the tab indentation, Obsidian interprets the remaining 4+ space-indented
+        # content as literal code.  Dedenting the source container first keeps every later
+        # transformation in the same coordinate system.
+        text = self.normalize_tabitem_sources(text)
         text = self.sanitize_code_fences(text)
         text = self.apply_transform_pipeline(text, ctx)
         # Detect leftover MDX *before* generating Obsidian links. Markdown destinations are
@@ -613,6 +620,30 @@ class CEMImporter:
                 flags=re.IGNORECASE,
             )
         return "".join(chunks)
+
+    @classmethod
+    def normalize_tabitem_sources(cls, text: str) -> str:
+        """Dedent raw ``<TabItem>`` bodies before component conversion.
+
+        CEM course pages frequently indent every line inside a TabItem by eight spaces.
+        Several handlers (images, Feedback, imported helpers, etc.) emit replacement
+        Markdown at column zero.  If that happens *before* the tab is flattened, a later
+        common-indent pass sees both 0 and 8 and cannot safely dedent the body anymore.
+        Obsidian then renders most of the tab as one giant indented code block.
+
+        Working on the untouched MDX source avoids that class of bug entirely.  Nested
+        indentation (lists, directives, code) is preserved relative to the tab baseline.
+        """
+        pattern = re.compile(
+            r"(?P<open><TabItem\b[^>]*>)(?P<body>.*?)(?P<close></TabItem>)",
+            re.DOTALL,
+        )
+
+        def repl(match: re.Match[str]) -> str:
+            body = cls.normalize_indentation(match.group("body"))
+            return match.group("open") + body + match.group("close")
+
+        return pattern.sub(repl, text)
 
     @staticmethod
     def sanitize_code_fences(text: str) -> str:
@@ -1587,14 +1618,9 @@ export default function App() {
         return pattern.sub(self.callout("info", "Plan de cours", body), text)
 
     def convert_feedback(self, text: str) -> str:
-        # This component submits course-site feedback to a server. It is not course content and
-        # cannot usefully operate in an offline vault, so preserve an explicit harmless marker.
-        return re.sub(
-            r"<Feedback\b.*?/>",
-            self.callout("note", "Rétroaction du site", "Widget de rétroaction en ligne omis dans la copie locale."),
-            text,
-            flags=re.DOTALL,
-        )
+        # This server-side survey widget is not pedagogical content.  Keeping an explanatory
+        # placeholder on every tab adds a lot of noise to the local notes, so omit it cleanly.
+        return re.sub(r"<Feedback\b.*?/>", "", text, flags=re.DOTALL)
 
     def convert_highlight(self, text: str) -> str:
         """Preserve the CEM Highlight component's semantic colour in Obsidian.
@@ -1856,31 +1882,81 @@ export default function App() {
         return text
 
     def convert_admonitions(self, text: str) -> str:
+        """Convert Docusaurus directives, including nested 4-colon containers.
+
+        420-SN1 makes heavy use of the valid Docusaurus pattern ``::::note`` around
+        content that itself contains ``:::tip``/``:::warning`` blocks.  It also uses
+        site-specific aliases such as ``:::info-nt`` and ``:::tip-nt``.  The old parser
+        only recognized exactly three colons and therefore leaked ``::::`` into the
+        generated note; the surrounding indentation then became literal code in Obsidian.
+
+        Track directive fence length and source indentation so nested directives close
+        correctly and body indentation is relative to the opener, not the MDX wrapper.
+        Fenced code inside a directive is treated as opaque content.
+        """
         lines = text.splitlines()
         out: list[str] = []
-        stack: list[tuple[str, str]] = []
-        opener = re.compile(r"^\s*:::(note|tip|info|warning|danger|caution)(?:\[([^\]]+)\]|(?:\s+(.*?)))?\s*$", re.IGNORECASE)
+        # (fence length, source indent columns, kind, title)
+        stack: list[tuple[int, int, str, str]] = []
+        opener = re.compile(
+            r"^(?P<indent>[ \t]*)(?P<fence>:{3,})"
+            r"(?P<kind>note|tip|info|warning|danger|caution)(?:-nt)?"
+            r"(?:\[([^\]]+)\]|(?:\s+(.*?)))?\s*$",
+            re.IGNORECASE,
+        )
+        closer = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>:{3,})\s*$")
+        fence_open = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})")
+        code_fence: tuple[str, int] | None = None
+
+        def emit_content(line: str) -> None:
+            if not stack:
+                out.append(line)
+                return
+            _flen, indent, _kind, _title = stack[-1]
+            expanded = line.expandtabs(4)
+            if expanded.strip():
+                leading = len(expanded) - len(expanded.lstrip())
+                expanded = expanded[min(indent, leading):]
+                out.append(("> " * len(stack)) + expanded)
+            else:
+                out.append(("> " * len(stack)).rstrip())
+
         for line in lines:
+            fm = fence_open.match(line)
+            if code_fence is not None:
+                emit_content(line)
+                marker, length = code_fence
+                stripped = line.lstrip()
+                if re.match(rf"^{re.escape(marker)}{{{length},}}[ \t]*$", stripped):
+                    code_fence = None
+                continue
+            if fm:
+                marker_text = fm.group("fence")
+                code_fence = (marker_text[0], len(marker_text))
+                emit_content(line)
+                continue
+
             m = opener.match(line)
             if m:
-                kind = m.group(1).lower()
+                kind = m.group("kind").lower()
                 if kind == "caution":
                     kind = "warning"
-                title = (m.group(2) or m.group(3) or "").strip()
-                stack.append((kind, title))
+                title = (m.group(4) or m.group(5) or "").strip()
+                indent_text = m.group("indent").expandtabs(4)
+                stack.append((len(m.group("fence")), len(indent_text), kind, title))
                 prefix = "> " * len(stack)
                 out.append(f"{prefix}[!{kind}]" + (f" {title}" if title else ""))
                 self.report.admonitions += 1
                 continue
-            if line.strip() == ":::" and stack:
+
+            cm = closer.match(line)
+            if cm and stack and len(cm.group("fence")) == stack[-1][0]:
                 stack.pop()
-                out.append("> " * len(stack) if stack else "")
+                out.append(("> " * len(stack)).rstrip() if stack else "")
                 continue
-            if stack:
-                prefix = "> " * len(stack)
-                out.append(prefix.rstrip() if not line else prefix + line)
-            else:
-                out.append(line)
+
+            emit_content(line)
+
         return "\n".join(out)
 
     def rewrite_markdown_links(self, text: str, ctx: NoteContext) -> str:
@@ -1892,6 +1968,21 @@ export default function App() {
             raw_target = target.strip()
             if self.is_external_target(raw_target) or raw_target.startswith("?"):
                 return m.group(0)
+
+            # Component handlers may already have copied an image/source to the output-side
+            # ``_assets`` tree and emitted a valid relative Markdown link.  Do not try to
+            # resolve that generated path against the *source* repository again; doing so
+            # created dozens of false "unresolved link" diagnostics in 420-SN1.
+            generated_path, _generated_anchor = self.split_anchor(raw_target)
+            if "_assets" in Path(generated_path).parts:
+                candidate = (ctx.output_note.parent / generated_path).resolve()
+                try:
+                    candidate.relative_to(self.output_root.resolve())
+                except ValueError:
+                    pass
+                else:
+                    if candidate.exists():
+                        return m.group(0)
 
             path_part, anchor = self.split_anchor(raw_target)
             resolved = self.resolve_local_reference(ctx.source_note, path_part)
@@ -1985,6 +2076,16 @@ export default function App() {
                 self.docs_root / clean,
                 self.source / clean,
             ])
+            # Docusaurus deployments are commonly hosted below ``/<nomUrl>/``.  Some JSX
+            # therefore contains an already-base-prefixed asset such as
+            # ``/420-SN1/img/logo.svg`` even though the file lives at ``static/img/logo.svg``.
+            # Try stripping exactly one leading segment as a fallback, after literal paths.
+            if "/" in clean:
+                without_base = clean.split("/", 1)[1]
+                candidates.extend([
+                    self.source / "web" / "static" / without_base,
+                    self.source / "static" / without_base,
+                ])
         else:
             candidates.append(note.parent / target)
 

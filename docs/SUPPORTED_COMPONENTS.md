@@ -29,6 +29,7 @@ Cette page décrit les principaux éléments reconnus par l'importeur et leur é
 | `PlanDeCoursMenu` | Liens vers les PDF locaux lorsque disponibles |
 | Fragments statiques `docs/_components/*.mdx` | Contenu incorporé dans la note lorsqu’il est importé comme composant |
 | `C`, `S`, `N`, `K`, `F`, `B` (PyCode 420-SN1) | Code inline portable, sans dépendance au CSS du site |
+| Admonitions imbriquées `::::...` et variantes `*-nt` | Callouts Obsidian imbriqués |
 | Composant inconnu | Signalé dans le rapport de conversion |
 
 ## ReactPreview et Code Playground

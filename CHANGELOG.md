@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.11
+
+- normalise les corps de `TabItem` avant toute conversion de composant afin d'empêcher les remplacements précoces (images, Feedback, fragments MDX) de casser l'indentation globale de 420-SN1;
+- prend en charge les admonitions Docusaurus imbriquées avec fences de 4+ deux-points (`::::note`) ainsi que les variantes CEM `info-nt`, `tip-nt`, `warning-nt` et `danger-nt`;
+- conserve correctement les blocs de code à l'intérieur des callouts imbriqués au lieu de laisser des marqueurs `::::` ou de produire de gros blocs de code accidentels;
+- supprime silencieusement les widgets `Feedback` du site, qui ne sont pas du contenu pédagogique et ajoutaient du bruit dans les notes locales;
+- évite de revalider comme liens source les assets déjà générés sous `_assets`, éliminant les faux liens non résolus observés dans 420-SN1;
+- résout les assets Docusaurus dont l'URL contient déjà le `baseUrl` du cours, par exemple `/420-SN1/img/logo.svg`;
+- ajoute des tests de régression directement inspirés des blocs `Variables`, `On commence!` et des diagnostics du rapport 420-SN1.
+
 ## 0.2.10
 
 - empêche le vrai composant Angular de la page Git départementale d'être interprété comme un bloc de code indenté dans Obsidian en normalisant son HTML à la colonne zéro;
