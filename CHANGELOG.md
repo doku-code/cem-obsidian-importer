@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.8
+
+- synchronise automatiquement la page officielle `https://info.cegepmontpetit.ca/git`;
+- range cette ressource commune dans `Ressources/Git - Consignes du département.md`;
+- conserve le contenu Markdown officiel et ajoute seulement les métadonnées Obsidian nécessaires;
+- affiche l'état de cette ressource dans `doctor`.
+
+
 ## 0.2.7
 
 - prend en charge les quiz CEM qui référencent directement un fichier JSON sous `web/static/quiz`;

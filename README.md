@@ -19,8 +19,9 @@ Le programme :
 1. demande dans quel dossier du vault placer les cours;
 2. affiche la liste des dépôts CEM connus;
 3. permet d'en sélectionner un ou plusieurs;
-4. importe les cours choisis;
-5. affiche un résumé avec les erreurs d'import et les problèmes de conversion, regroupés par dépôt.
+4. synchronise aussi la page Git commune du département dans `Ressources/`;
+5. importe les cours choisis;
+6. affiche un résumé avec les erreurs d'import et les problèmes de conversion, regroupés par dépôt.
 
 La dernière destination utilisée est mémorisée localement et proposée comme valeur par défaut au prochain lancement.
 
@@ -40,7 +41,8 @@ La dernière destination utilisée est mémorisée localement et proposée comme
 - transforme les `ReactPreview` multi-fichiers en playgrounds interactifs avec **Code Playground**;
 - utilise **Codeblock Customizer** pour les comparaisons de snippets;
 - produit des rapports Markdown/JSON centralisés dans le dossier `reports/` du projet, sans polluer les notes;
-- synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté.
+- synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté;
+- synchronise automatiquement la page officielle des consignes Git du département dans `Ressources/Git - Consignes du département.md`.
 
 La conversion est volontairement conservatrice : un composant MDX inconnu n'est jamais supprimé silencieusement. Il est signalé dans le rapport d'import.
 
@@ -199,6 +201,8 @@ Les cours sont automatiquement rangés par session. Une destination comme
 
 ```text
 Cégep Édouard-Montpetit/
+├── Ressources/
+│   └── Git - Consignes du département.md
 ├── Session 1/
 │   └── 1P6 - Introduction à la programmation/
 │       └── Cours/
@@ -214,6 +218,8 @@ Cégep Édouard-Montpetit/
     └── 5N6 - Applications mobiles avancées/
         └── Cours/
 ```
+
+Le dossier `Ressources` contient les références communes à tous les cours. La page Git du département est mise à jour automatiquement à chaque `run` depuis sa source officielle.
 
 À l'intérieur de chaque dossier `Cours`, l'importeur conserve la structure pédagogique du site : navigation, sections, recettes, TP et `_assets`. Les cours sans session fixe sont rangés dans `Autres cours`.
 

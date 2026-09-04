@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.request import Request, urlopen
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,13 @@ ENGINE_PATH = PROJECT_ROOT / "cem_to_obsidian.py"
 CSS_SOURCE = PROJECT_ROOT / "obsidian-wide-notes.css"
 REPORTS_ROOT = PROJECT_ROOT / "reports"
 DEFAULT_NOTES_FOLDER = "Cours"
+DEPARTMENT_RESOURCES_FOLDER = "Ressources"
+GIT_GUIDE_FILENAME = "Git - Consignes du département.md"
+GIT_GUIDE_SOURCE_PAGE = "https://info.cegepmontpetit.ca/git"
+GIT_GUIDE_RAW_URL = (
+    "https://raw.githubusercontent.com/departement-info-cem/"
+    "departement-info-cem.github.io/main/git.md"
+)
 VERSION = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
@@ -142,6 +150,59 @@ def find_vault_root(start: Path) -> Path | None:
         if (candidate / ".obsidian").is_dir():
             return candidate
     return None
+
+
+def build_department_git_note(source_markdown: str) -> str:
+    """Wrap the official department Git page in minimal Obsidian metadata.
+
+    The source Markdown itself is preserved verbatim apart from surrounding
+    whitespace. The frontmatter only identifies the original page and applies
+    the same wide-note CSS class used by imported course pages.
+    """
+
+    body = source_markdown.lstrip("\ufeff").strip()
+    frontmatter = (
+        "---\n"
+        "title: Git - Consignes du département\n"
+        f"source: {GIT_GUIDE_SOURCE_PAGE}\n"
+        "cssclasses:\n"
+        "  - cem-course\n"
+        "---\n\n"
+    )
+    return frontmatter + body + "\n"
+
+
+def sync_department_git_guide(
+    destination: Path,
+    *,
+    quiet: bool = False,
+    fetcher=None,
+) -> Path:
+    """Download the department-wide Git guide into the shared resources folder.
+
+    This resource applies to every course, so it is intentionally synchronized
+    on every launcher run instead of appearing in the course selection menu.
+    ``fetcher`` exists to keep the network behavior easy to unit test.
+    """
+
+    if fetcher is None:
+        def fetcher(url: str) -> str:
+            request = Request(url, headers={"User-Agent": "cem-obsidian-importer"})
+            with urlopen(request, timeout=20) as response:
+                return response.read().decode("utf-8")
+
+    source = fetcher(GIT_GUIDE_RAW_URL)
+    if not isinstance(source, str) or not source.strip():
+        raise RuntimeError("La page Git départementale téléchargée est vide.")
+
+    resources = destination / DEPARTMENT_RESOURCES_FOLDER
+    resources.mkdir(parents=True, exist_ok=True)
+    target = resources / GIT_GUIDE_FILENAME
+    target.write_text(build_department_git_note(source), encoding="utf-8")
+
+    if not quiet:
+        print(f"✓ Guide Git départemental synchronisé : {target}")
+    return target
 
 
 def sync_css(destination: Path, *, quiet: bool = False) -> Path | None:
@@ -565,6 +626,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         print("⚠ Aucun dossier .obsidian détecté au-dessus de la destination.")
     sync_css(destination)
+    try:
+        sync_department_git_guide(destination)
+    except Exception as exc:
+        print(
+            "⚠ Impossible de synchroniser la page Git départementale.\n"
+            f"  {exc}\n"
+            "  L'import des cours peut tout de même continuer."
+        )
 
     selected = prompt_courses()
     with tempfile.TemporaryDirectory(prefix="cem-obsidian-reports-") as td:
@@ -613,6 +682,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"Code Playground : {'installé' if code_playground.is_file() else 'non détecté (optionnel)'}")
             snippet = vault / ".obsidian" / "snippets" / CSS_SOURCE.name
             print(f"CSS CEM : {'installé' if snippet.is_file() else 'non installé'}")
+            git_guide = Path(destination_raw).expanduser() / DEPARTMENT_RESOURCES_FOLDER / GIT_GUIDE_FILENAME
+            print(f"Guide Git départemental : {'installé' if git_guide.is_file() else 'non installé'}")
         else:
             print("  [ATTENTION] Aucun .obsidian trouvé au-dessus de la destination.")
 

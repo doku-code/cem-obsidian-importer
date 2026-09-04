@@ -1018,6 +1018,31 @@ class PublicConfigurationTests(unittest.TestCase):
             finally:
                 manager.REPORTS_ROOT = original
 
+    def test_department_git_guide_is_written_to_shared_resources(self):
+        with tempfile.TemporaryDirectory() as td:
+            destination = Path(td) / "School" / "Cégep Édouard-Montpetit"
+            destination.mkdir(parents=True)
+            source = "# Les consignes pour utiliser git au département\n\ncommit push, commit push, commit push\n"
+            target = manager.sync_department_git_guide(
+                destination,
+                quiet=True,
+                fetcher=lambda _url: source,
+            )
+            self.assertEqual(
+                target,
+                destination / "Ressources" / "Git - Consignes du département.md",
+            )
+            rendered = target.read_text(encoding="utf-8")
+            self.assertIn("source: https://info.cegepmontpetit.ca/git", rendered)
+            self.assertIn("cssclasses:\n  - cem-course", rendered)
+            self.assertIn(source.strip(), rendered)
+
+    def test_department_git_guide_preserves_official_markdown_body(self):
+        source = "\ufeff# Titre\n\n## Section\n\n- élément\n\n```git\ngit push\n```\n"
+        rendered = manager.build_department_git_note(source)
+        body = rendered.split("---\n", 2)[-1].lstrip("\n")
+        self.assertEqual(body, source.lstrip("\ufeff").strip() + "\n")
+
     def test_public_version_is_semantic(self):
         self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")
         version_file = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
