@@ -38,7 +38,7 @@ GIT_GUIDE_FILENAME = "Git - Consignes du département.md"
 GIT_GUIDE_SOURCE_PAGE = "https://info.cegepmontpetit.ca/git"
 GIT_GUIDE_RAW_URL = (
     "https://raw.githubusercontent.com/departement-info-cem/"
-    "departement-info-cem.github.io/main/git.md"
+    "departement-info-cem.github.io/main/angular/src/app/page/git/git.component.html"
 )
 VERSION = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
@@ -152,15 +152,23 @@ def find_vault_root(start: Path) -> Path | None:
     return None
 
 
-def build_department_git_note(source_markdown: str) -> str:
-    """Wrap the official department Git page in minimal Obsidian metadata.
+def build_department_git_note(source_html: str) -> str:
+    """Render the actual department Git page inside Obsidian.
 
-    The source Markdown itself is preserved verbatim apart from surrounding
-    whitespace. The frontmatter only identifies the original page and applies
-    the same wide-note CSS class used by imported course pages.
+    ``/git`` is an Angular page. The old top-level ``git.md`` file in the
+    repository is legacy content and does not match the page students see.
+    The current content lives in
+    ``angular/src/app/page/git/git.component.html``.
+
+    The component is static HTML (cards, lists, ``pre`` blocks and badges), so
+    preserving that markup is more faithful than flattening it into plain
+    Markdown. ``obsidian-wide-notes.css`` recreates the responsive card grid.
     """
 
-    body = source_markdown.lstrip("\ufeff").strip()
+    body = source_html.lstrip("\ufeff").strip()
+    # The URL is fixed to the official CEM repository, but do not persist
+    # executable tags if upstream ever introduces them unexpectedly.
+    body = re.sub(r"<script\b.*?</script>", "", body, flags=re.IGNORECASE | re.DOTALL)
     frontmatter = (
         "---\n"
         "title: Git - Consignes du département\n"
@@ -169,7 +177,7 @@ def build_department_git_note(source_markdown: str) -> str:
         "  - cem-course\n"
         "---\n\n"
     )
-    return frontmatter + body + "\n"
+    return frontmatter + '<div class="cem-dept-git">\n' + body + "\n</div>\n"
 
 
 def sync_department_git_guide(
@@ -182,7 +190,9 @@ def sync_department_git_guide(
 
     This resource applies to every course, so it is intentionally synchronized
     on every launcher run instead of appearing in the course selection menu.
-    ``fetcher`` exists to keep the network behavior easy to unit test.
+    The source is the Angular component used by the real ``/git`` page, not the
+    repository's legacy top-level ``git.md`` file. ``fetcher`` exists to keep
+    the network behavior easy to unit test.
     """
 
     if fetcher is None:

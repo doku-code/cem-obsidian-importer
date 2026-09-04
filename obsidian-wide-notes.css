@@ -248,3 +248,94 @@ body {
   background: var(--text-highlight-bg);
   color: inherit;
 }
+
+/* Inline JSX icons used by some CEM notes (copy icon, console icon, etc.).
+   The generic course image rule centers figures, so explicitly restore inline flow. */
+.cem-course img.cem-inline-image {
+  display: inline-block !important;
+  width: auto;
+  max-width: none !important;
+  height: auto !important;
+  margin: 0 0.22em !important;
+  vertical-align: middle !important;
+}
+
+/* Department-wide Git guide. The real /git page is an Angular Bootstrap-style
+   card grid, not the legacy git.md file that also exists in the repository. */
+.cem-course .cem-dept-git .container {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cem-course .cem-dept-git .row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+  margin: 0 0 1.4rem;
+}
+
+.cem-course .cem-dept-git .col-md {
+  min-width: 0;
+  padding: 1rem 1.05rem;
+  border-radius: 6px;
+}
+
+.cem-course .cem-dept-git .alert {
+  background: transparent;
+}
+
+.cem-course .cem-dept-git .alert.alert-dark {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.cem-course .cem-dept-git .alert.alert-success {
+  background: var(--background-modifier-success, rgba(70, 150, 90, 0.18));
+  border: 1px solid var(--color-green, #3f8f5f);
+}
+
+.cem-course .cem-dept-git .col-md > :first-child {
+  margin-top: 0;
+}
+
+.cem-course .cem-dept-git h4 {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+}
+
+.cem-course .cem-dept-git p {
+  margin: 0.55rem 0;
+}
+
+.cem-course .cem-dept-git pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cem-course .cem-dept-git .badge {
+  display: inline-block;
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.84em;
+  line-height: 1.35;
+}
+
+.cem-course .cem-dept-git .badge.text-bg-warning {
+  background: var(--color-yellow, #d9a514);
+  color: var(--background-primary, #111);
+}
+
+.cem-course .cem-dept-git .badge.text-bg-danger {
+  background: var(--color-red, #d14b4b);
+  color: #fff;
+}
+
+@media (max-width: 950px) {
+  .cem-course .cem-dept-git .row {
+    grid-template-columns: 1fr;
+  }
+}

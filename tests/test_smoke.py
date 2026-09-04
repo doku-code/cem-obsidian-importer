@@ -873,6 +873,50 @@ Texte gauche.
             self.assertNotIn(hidden.resolve(), importer.output_map)
             self.assertNotIn("autres-recettes", self.report(importer))
 
+    def test_420_sn1_tab_helpers_do_not_turn_prose_into_code_and_require_images_are_local(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs" / "01-cours"
+            components = root / "web" / "docs" / "_components"
+            static_icons = root / "web" / "static" / "img" / "icons"
+            docs.mkdir(parents=True)
+            components.mkdir(parents=True)
+            static_icons.mkdir(parents=True)
+            (static_icons / "copier.png").write_bytes(b"fake")
+            (components / "Reminder.mdx").write_text(":::tip Rappel\nContenu du rappel.\n:::\n", encoding="utf-8")
+            note = docs / "01-rencontre1.mdx"
+            source = (
+                "import Tabs from '@theme/Tabs';\n"
+                "import TabItem from '@theme/TabItem';\n"
+                "import Reminder from '@site/docs/_components/Reminder.mdx';\n\n"
+                "<Tabs>\n"
+                "    <TabItem value=\"intro\" label=\"Intro\">\n"
+                "        <Reminder />\n\n"
+                "        ### Environnements de développement\n\n"
+                "        Texte normal qui ne doit pas devenir un bloc de code.\n\n"
+                "        Pour copier : <img src={require('/img/icons/copier.png').default} width=\"24\" style={{ verticalAlign: 'middle' }}/>\n"
+                "    </TabItem>\n"
+                "</Tabs>\n"
+            )
+            note.write_text(source, encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("#### Intro", converted)
+            self.assertIn("### Environnements de développement", converted)
+            self.assertIn("Texte normal qui ne doit pas devenir un bloc de code.", converted)
+            self.assertNotIn("        ### Environnements", converted)
+            self.assertNotIn("src={require", converted)
+            self.assertIn('class="cem-inline-image"', converted)
+            self.assertIn("copier.png", converted)
+            self.assertEqual(sum(importer.report.unknown_components.values()), 0)
+
+    def test_empty_mermaid_fence_is_removed(self):
+        cleaned = CEMImporter.cleanup_whitespace("Avant\n\n```mermaid\n\n```\n\nAprès\n")
+        self.assertNotIn("```mermaid", cleaned)
+        self.assertIn("Avant", cleaned)
+        self.assertIn("Après", cleaned)
+
 
 class PublicConfigurationTests(unittest.TestCase):
     def test_default_course_width_is_1400px(self):
@@ -1022,7 +1066,12 @@ class PublicConfigurationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             destination = Path(td) / "School" / "Cégep Édouard-Montpetit"
             destination.mkdir(parents=True)
-            source = "# Les consignes pour utiliser git au département\n\ncommit push, commit push, commit push\n"
+            source = (
+                '<div class="container"><div class="row">'
+                '<div class="col-md alert"><h4>Types de commits</h4>'
+                '<span class="badge text-bg-warning">FCT</span></div>'
+                '</div></div>'
+            )
             target = manager.sync_department_git_guide(
                 destination,
                 quiet=True,
@@ -1035,13 +1084,31 @@ class PublicConfigurationTests(unittest.TestCase):
             rendered = target.read_text(encoding="utf-8")
             self.assertIn("source: https://info.cegepmontpetit.ca/git", rendered)
             self.assertIn("cssclasses:\n  - cem-course", rendered)
-            self.assertIn(source.strip(), rendered)
+            self.assertIn('<div class="cem-dept-git">', rendered)
+            self.assertIn("Types de commits", rendered)
+            self.assertIn("text-bg-warning", rendered)
 
-    def test_department_git_guide_preserves_official_markdown_body(self):
-        source = "\ufeff# Titre\n\n## Section\n\n- élément\n\n```git\ngit push\n```\n"
+    def test_department_git_guide_uses_actual_angular_component_markup(self):
+        source = (
+            '\ufeff<div class="container"><div class="row">'
+            '<div class="col-md alert alert-dark"><strong>Nom du dépôt</strong></div>'
+            '<div class="col-md alert"><h4>Types de commits</h4>'
+            '<span class="badge text-bg-warning">BUGFIX</span></div>'
+            '</div></div>'
+        )
         rendered = manager.build_department_git_note(source)
-        body = rendered.split("---\n", 2)[-1].lstrip("\n")
-        self.assertEqual(body, source.lstrip("\ufeff").strip() + "\n")
+        self.assertIn('<div class="cem-dept-git">', rendered)
+        self.assertIn("Nom du dépôt", rendered)
+        self.assertIn("BUGFIX", rendered)
+        self.assertNotIn("```mermaid", rendered)
+        self.assertNotIn("<script", rendered.lower())
+
+    def test_department_git_css_recreates_card_grid(self):
+        css = (Path(__file__).resolve().parents[1] / "obsidian-wide-notes.css").read_text(encoding="utf-8")
+        self.assertIn(".cem-dept-git .row", css)
+        self.assertIn("grid-template-columns: repeat(3", css)
+        self.assertIn(".badge.text-bg-warning", css)
+        self.assertIn("img.cem-inline-image", css)
 
     def test_public_version_is_semantic(self):
         self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")

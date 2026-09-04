@@ -8,10 +8,11 @@ Cette page décrit les principaux éléments reconnus par l'importeur et leur é
 | Titres, listes, tableaux | Conservés |
 | Images locales | Copiées sous `_assets` et centrées via CSS |
 | `Image` avec `img={require(...)}` | Image locale copiée sous `_assets`, largeur conservée |
+| `img` JSX avec `src={require(...).default}` | Image locale; les petites icônes `verticalAlign` restent inline |
 | `:::note`, `:::tip`, `:::warning`, etc. | Callouts Obsidian |
 | `Row` / `Column` | Mise en page multi-colonnes via CSS |
 | `Tabs` / `TabItem` avec code | Groupe Codeblock Customizer |
-| `Tabs` complexes | Contenu aplati sans perte volontaire |
+| `Tabs` complexes | Contenu aplati sans perte volontaire et déindenté pour Obsidian |
 | `GHCode` | Code distant récupéré puis copié localement |
 | `JavaScriptConsole` | Bloc exécutable / comparaison de fichiers |
 | `ReactPreview` | Code Playground si disponible; fallback en onglets de code |

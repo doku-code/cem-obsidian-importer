@@ -700,6 +700,12 @@ class CEMImporter:
         This intentionally targets content fragments, not arbitrary React components.
         Dynamic JS/TS components still go through their dedicated handlers and remain
         reportable when unsupported.
+
+        A subtle but important detail: when a helper is used inside an indented
+        ``<TabItem>``, preserve the component line's indentation on every inlined line.
+        Otherwise the helper introduces a zero-indented line, the tab body can no longer
+        be dedented as a unit, and Obsidian interprets the remaining 4+ space-indented
+        prose as one giant code block.
         """
         for name, source in ctx.mdx_imports.items():
             if not source.is_file():
@@ -711,6 +717,19 @@ class CEMImporter:
             fragment = self._load_imported_mdx_fragment(source, {ctx.source_note.resolve()})
             if not fragment:
                 continue
+
+            standalone = re.compile(
+                rf"(?m)^(?P<indent>[ \t]*)<{re.escape(name)}\b[^>]*/>[ \t]*$"
+            )
+
+            def standalone_repl(match: re.Match[str], body: str = fragment) -> str:
+                indent = match.group("indent")
+                return "\n".join(
+                    indent + line if line else "" for line in body.strip().splitlines()
+                )
+
+            text = standalone.sub(standalone_repl, text)
+            # Rare inline usage: keep the old safe behavior rather than dropping content.
             text = re.sub(
                 rf"<{re.escape(name)}\b[^>]*/>",
                 lambda _m, body=fragment: "\n" + body.strip() + "\n",
@@ -750,20 +769,30 @@ class CEMImporter:
         return "".join(chunks)
 
     def convert_docusaurus_image(self, text: str, ctx: NoteContext) -> str:
-        """Convert Docusaurus ``<Image img={require(...)} />`` to a local Obsidian image."""
-        pattern = re.compile(r"<Image\b(?P<attrs>.*?)/>", re.DOTALL)
+        """Convert CEM/Docusaurus image JSX into local Obsidian images.
+
+        Two forms occur in the course repos:
+
+        - ``<Image img={require('./x.png')} width="300" />``
+        - ``<img src={require('/img/x.png').default} ... />``
+
+        The lowercase form is especially common in 420-SN1. Small images carrying
+        React's ``verticalAlign`` style are inline UI icons; mark them explicitly so
+        the course CSS does not center them like ordinary figures.
+        """
+        pattern = re.compile(r"<(?P<tag>Image|img)\b(?P<attrs>.*?)/?>", re.DOTALL | re.IGNORECASE)
 
         def repl(match: re.Match[str]) -> str:
             attrs = match.group("attrs")
             alt = self.parse_jsx_string_attr(attrs, "alt") or ""
             width = self.parse_jsx_string_attr(attrs, "width")
             required = re.search(
-                r"\bimg\s*=\s*\{\s*require\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\}",
+                r"\b(?:img|src)\s*=\s*\{\s*require\(\s*['\"]([^'\"]+)['\"]\s*\)\s*(?:\.default)?\s*\}",
                 attrs,
                 flags=re.DOTALL,
             )
             src = required.group(1) if required else self.parse_jsx_string_attr(attrs, "src")
-            if not src:
+            if not src or self.is_external_target(src):
                 return match.group(0)
 
             resolved = self.resolve_local_reference(ctx.source_note, src)
@@ -773,10 +802,23 @@ class CEMImporter:
 
             copied = self.copy_asset(resolved, ctx)
             rel_link = os.path.relpath(copied, ctx.output_note.parent).replace(os.sep, "/")
-            if width and re.fullmatch(r"\d+(?:\.\d+)?", width):
+            escaped_src = html.escape(rel_link, quote=True)
+            escaped_alt = html.escape(alt, quote=True)
+
+            # React inline icons (copy button, console icon, etc.) must stay on the
+            # surrounding text line. Ordinary figures keep the existing centered style.
+            is_inline_icon = bool(re.search(r"verticalAlign\s*:", attrs, re.IGNORECASE))
+            if is_inline_icon:
+                width_attr = f' width="{html.escape(width, quote=True)}"' if width else ""
                 return (
-                    f'<img src="{html.escape(rel_link, quote=True)}" '
-                    f'alt="{html.escape(alt, quote=True)}" width="{width}">'
+                    f'<img class="cem-inline-image" src="{escaped_src}" '
+                    f'alt="{escaped_alt}"{width_attr}>'
+                )
+
+            if width and re.fullmatch(r"\d+(?:\.\d+)?(?:px|%|em|rem|vw|vh)?", width):
+                return (
+                    f'<img src="{escaped_src}" alt="{escaped_alt}" '
+                    f'width="{html.escape(width, quote=True)}">'
                 )
             return f"![{alt}](<{rel_link}>)"
 
@@ -2151,6 +2193,13 @@ export default function App() {
 
     @staticmethod
     def cleanup_whitespace(text: str) -> str:
+        # An empty Mermaid fence is valid source Markdown but Obsidian renders it as
+        # a loud parser error. It conveys no diagram, so remove only truly empty fences.
+        text = re.sub(
+            r"(?ms)^[ \t]*```mermaid[ \t]*\n(?:[ \t]*\n)*[ \t]*```[ \t]*(?:\n|$)",
+            "",
+            text,
+        )
         text = re.sub(r"[ \t]+\n", "\n", text)
         text = re.sub(r"\n{4,}", "\n\n\n", text)
         return text.strip() + "\n"

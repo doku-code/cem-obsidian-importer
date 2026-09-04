@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.9
+
+- remplace la mauvaise source legacy `git.md` par le vrai composant Angular utilisé par `https://info.cegepmontpetit.ca/git`;
+- reproduit la page Git départementale en grille responsive de cartes avec badges et alertes via le CSS Obsidian;
+- supprime l’erreur Mermaid provoquée par les fences Mermaid complètement vides;
+- conserve l’indentation des fragments MDX importés à l’intérieur des `TabItem`, afin d’éviter que de longues portions de cours soient rendues comme du code dans Obsidian;
+- convertit aussi les images JSX minuscules `img` avec `src={require(...).default}`, notamment les icônes inline de 420-SN1;
+- ajoute des styles dédiés pour garder les petites icônes inline au lieu de les centrer comme des figures;
+- ajoute des tests de régression ciblant les problèmes visuels observés sur la page Git départementale et 420-SN1.
+
 ## 0.2.8
 
 - synchronise automatiquement la page officielle `https://info.cegepmontpetit.ca/git`;

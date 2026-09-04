@@ -42,7 +42,7 @@ La dernière destination utilisée est mémorisée localement et proposée comme
 - utilise **Codeblock Customizer** pour les comparaisons de snippets;
 - produit des rapports Markdown/JSON centralisés dans le dossier `reports/` du projet, sans polluer les notes;
 - synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté;
-- synchronise automatiquement la page officielle des consignes Git du département dans `Ressources/Git - Consignes du département.md`.
+- synchronise automatiquement la vraie page Angular des consignes Git du département dans `Ressources/Git - Consignes du département.md`, avec sa grille de cartes et ses badges adaptés à Obsidian.
 
 La conversion est volontairement conservatrice : un composant MDX inconnu n'est jamais supprimé silencieusement. Il est signalé dans le rapport d'import.
 
