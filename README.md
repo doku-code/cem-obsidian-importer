@@ -206,29 +206,31 @@ Cégep Édouard-Montpetit/
 ├── Git - Consignes du département.md
 ├── Session 1/
 │   └── 1P6 - Introduction à la programmation/
-│       └── Cours/
+│       └── Classe/
 ├── Session 3/
 │   └── 3W6 - Programmation Web transactionnelle/
-│       └── Cours/
+│       └── Classe/
 ├── Session 4/
 │   ├── 3M5 - Introduction à la programmation mobile/
-│   │   └── Cours/
+│   │   └── Classe/
 │   └── 4W6 - Programmation Web orientée services/
-│       └── Cours/
+│       └── Classe/
 └── Session 6/
     └── 5N6 - Applications mobiles avancées/
-        └── Cours/
+        └── Classe/
 ```
 
 La page Git du département est placée directement à la racine du dossier Cégep et mise à jour automatiquement à chaque `run` depuis sa source officielle.
 
-À l'intérieur de chaque dossier `Cours`, l'importeur conserve le contenu pédagogique et les liens du site, mais **normalise seulement les dossiers de section connus** afin que les mêmes concepts aient le même nom d'un cours à l'autre. Les cours sans session fixe sont rangés dans `Autres cours`.
+Le dossier `Classe` est le conteneur généré pour un cours. À l'intérieur, la section pédagogique `Cours` reste distincte des sections `TP`, `Laboratoire`, `Recettes`, etc.
+
+À l'intérieur de chaque dossier `Classe`, l'importeur conserve le contenu pédagogique et les liens du site, mais **normalise seulement les dossiers de section connus** afin que les mêmes concepts aient le même nom d'un cours à l'autre. Les cours sans session fixe sont rangés dans `Autres cours`.
 
 Par exemple :
 
 ```text
 4W6 - Programmation Web orientée services/
-└── Cours/
+└── Classe/
     ├── 00 - Navigation.md
     ├── Accueil.md
     ├── Cours/          # source : 01-notes
@@ -237,7 +239,7 @@ Par exemple :
     └── Angular/        # source : 04-angular
 
 420-SN1 - Programmation en sciences/
-└── Cours/
+└── Classe/
     ├── 00 - Navigation.md
     ├── Accueil.md
     ├── Cours/
@@ -274,7 +276,7 @@ Les principaux alias actuellement reconnus sont :
 
 Avec Code Playground, `_playgrounds` peut aussi être créé à la racine du vault pour stocker les projets interactifs multi-fichiers.
 
-> **Important :** le dossier `Cours` est généré et peut être reconstruit lors d'un nouvel import. Gardez vos annotations personnelles dans un dossier séparé, par exemple `Mes notes`.
+> **Important :** le dossier `Classe` est généré et peut être reconstruit lors d'un nouvel import. Gardez vos annotations personnelles dans un dossier séparé, par exemple `Mes notes`.
 
 ---
 
@@ -295,6 +297,7 @@ les règles peuvent simplement être :
 ```regex
 ^Session [1-6]$
 ^Autres cours$
+^Classe$
 ^Cours$
 ^TP$
 ^Laboratoire$
@@ -318,7 +321,7 @@ les règles peuvent simplement être :
 
 ## Règles recommandées : limitées aux imports CEM
 
-Pour éviter de modifier par accident un autre dossier `Cours` ou `TP` dans le vault,
+Pour éviter de modifier par accident un autre dossier `Classe`, `Cours` ou `TP` dans le vault,
 activez l'option Iconize qui fait correspondre la règle au **chemin complet** (`Use file path`)
 et utilisez les expressions suivantes. Les chemins internes Obsidian utilisent `/` même sous Windows.
 
@@ -332,65 +335,65 @@ Sessions (layers / calendar)
 Autres cours (folder-open)
 (?:^|/)Autres cours$
 
-Dossier généré du cours (library / folders)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours$
+Dossier Classe généré (library / folders)
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe$
 
 Section Cours (book-open)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Cours$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Cours$
 
 TP (clipboard-check)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/TP$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/TP$
 
 Laboratoire (flask-conical)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Laboratoire$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Laboratoire$
 
 Recettes (cooking-pot / notebook-tabs)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Recettes$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Recettes$
 
 Aide-mémoire (notebook)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Aide-mémoire$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Aide-mémoire$
 
 Solution (circle-check / eye)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Solution$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Solution$
 
 Extra (sparkles)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Extra$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Extra$
 
 Défis (brain / puzzle)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Défis$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Défis$
 
 Informations (info)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Informations$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Informations$
 
 Exercices (list-checks)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Exercices$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Exercices$
 
 Archives (archive)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Archives$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Archives$
 
 Autres (ellipsis / folder)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Autres$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Autres$
 
 Angular (braces)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Angular$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Angular$
 
 Python (terminal / code)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Python$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Python$
 
 Colab (cloud)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Colab$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Colab$
 
 NumPy & Keras (network / brain-circuit)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/NumPy & Keras$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/NumPy & Keras$
 
 Google Cloud (cloud-cog)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Google Cloud$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Google Cloud$
 
 Projet Web (folder-code)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Projet Web$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Projet Web$
 
 Dans l'autobus (bus)
-(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Cours/Dans l'autobus$
+(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Dans l'autobus$
 ```
 
 L'icône du Cégep utilisée dans les captures du projet est fournie **à titre optionnel** dans :

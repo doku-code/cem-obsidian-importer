@@ -1203,8 +1203,8 @@ class PublicConfigurationTests(unittest.TestCase):
             finally:
                 manager.REPORTS_ROOT = original
 
-    def test_launcher_generated_content_folder_is_cours(self):
-        self.assertEqual(manager.DEFAULT_NOTES_FOLDER, "Cours")
+    def test_launcher_generated_content_folder_is_classe(self):
+        self.assertEqual(manager.DEFAULT_NOTES_FOLDER, "Classe")
 
     def test_multi_selection_accepts_numbers_ranges_and_commas(self):
         self.assertEqual(manager._parse_selection("1, 3 5-7", 10), [0, 2, 4, 5, 6])

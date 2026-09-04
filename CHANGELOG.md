@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.14
+
+- renomme le conteneur généré de chaque cours de `Cours` vers `Classe`, afin de distinguer clairement la classe de la section pédagogique `Cours`;
+- produit désormais une structure `Cours du programme / Classe / {Cours, TP, Laboratoire, Recettes, ...}` sans modifier les noms canoniques des sections pédagogiques;
+- met à jour toutes les regex Iconize documentées pour cibler `Classe` puis ses sous-dossiers;
+- conserve intégralement la normalisation prudente et les protections de collision introduites en 0.2.13;
+- ajoute un test de régression sur le nom du conteneur généré.
+
 ## 0.2.13
 
 - normalise les dossiers pédagogiques de premier niveau vers des noms canoniques communs aux 13 dépôts CEM supportés;

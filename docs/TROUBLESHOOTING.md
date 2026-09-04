@@ -125,7 +125,7 @@ Le dépôt fautif est affiché avec son URL afin de faciliter le diagnostic.
 Le dossier :
 
 ```text
-Cours/
+Classe/
 ```
 
 est généré et peut être reconstruit avec `--force` lors d'un nouvel import. Ne placez pas vos notes personnelles directement dedans.
@@ -134,6 +134,6 @@ Utilisez plutôt un dossier voisin, par exemple :
 
 ```text
 3M5 - Introduction à la programmation mobile/
-├── Cours/            ← généré
+├── Classe/           ← généré
 └── Mes notes/        ← personnel
 ```
