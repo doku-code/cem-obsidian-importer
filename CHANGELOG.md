@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+- prend en charge les quiz CEM qui référencent directement un fichier JSON sous `web/static/quiz`;
+- tolère les espaces insécables présents autour de certains attributs JSX dans les sources de cours;
+- ignore les liens Markdown placés dans des commentaires HTML, afin que du contenu volontairement désactivé ne génère plus de faux avertissements;
+- ignore les fichiers de documentation dont le nom commence par `_`, conformément à la convention CEM pour les brouillons/helpers non publiés;
+- répare prudemment certains liens de rencontres manifestement erronés lorsque le numéro affiché dans le libellé permet d'identifier une route locale existante;
+- ajoute des tests de régression couvrant les 8 derniers problèmes observés dans le rapport global des 13 cours.
+
 ## 0.2.6
 
 - remplace l'arborescence de rapports par un seul `reports/detail-summary.md` lisible;

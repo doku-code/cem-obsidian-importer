@@ -205,7 +205,10 @@ class CEMImporter:
             if not p.is_file() or p.suffix.lower() not in MARKDOWN_EXTS:
                 continue
             rel = p.relative_to(self.docs_root)
-            if any(part.startswith("_") for part in rel.parts[:-1]):
+            # CEM uses leading-underscore folders *and files* for helper/draft content that
+            # Docusaurus does not expose as normal student-facing pages. Keep those available
+            # as importable source material, but do not create visible Obsidian notes for them.
+            if any(part.startswith("_") for part in rel.parts):
                 continue
             notes.append(p.resolve())
         return sorted(notes)
@@ -1159,20 +1162,82 @@ export default function App() {
         return "\n".join(lines)
 
     def convert_quiz(self, text: str, ctx: NoteContext) -> str:
+        """Convert the two Quiz forms currently used by CEM course sites.
+
+        Older repos import a JavaScript quiz definition and pass it as ``file={quizVar}``.
+        Newer/simple repos point directly at JSON under Docusaurus ``static`` using
+        ``file="/quiz/foo.json"``. Both become static, foldable Obsidian quiz content.
+        """
         pattern = re.compile(r"<Quiz\b(?P<attrs>.*?)/>", re.DOTALL)
+
+        def render_json_quiz(source: Path) -> str | None:
+            try:
+                payload = json.loads(source.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+            if not isinstance(payload, dict) or not isinstance(payload.get("questions"), list):
+                return None
+
+            title = str(payload.get("titre") or "Quiz du cours")
+            blocks = [f"### 🧠 {title}"]
+            valid_questions = 0
+            for idx, question in enumerate(payload["questions"], 1):
+                if not isinstance(question, dict):
+                    continue
+                question_text = str(question.get("texte") or f"Question {idx}")
+                choices = question.get("choix")
+                answer = question.get("reponse")
+                if not isinstance(choices, list):
+                    continue
+                valid_questions += 1
+                body = [question_text]
+                code = question.get("code")
+                if isinstance(code, str) and code.strip():
+                    body.extend(["", "```", code.rstrip(), "```"] )
+                body.append("")
+                for cidx, choice in enumerate(choices, 1):
+                    body.append(f"{cidx}. {choice}")
+                blocks.append(self.callout("question", f"Question {idx}", "\n".join(body)))
+                if isinstance(answer, int) and 0 <= answer < len(choices):
+                    blocks.append(f"> [!success]- Réponse\n> **{answer + 1}. {choices[answer]}**")
+            return "\n\n".join(blocks) if valid_questions else None
 
         def repl(m: re.Match[str]) -> str:
             attrs = m.group("attrs")
-            file_var = re.search(r"\bfile=\{([A-Za-z_$][\w$]*)\}", attrs)
-            if not file_var:
+
+            # JavaScript/MDX form: <Quiz file={quizDefinition} />
+            file_var = re.search(r"\bfile\s*=\s*\{([A-Za-z_$][\w$]*)\}", attrs)
+            source: Path | None = None
+            source_label = ""
+            if file_var:
+                source_label = file_var.group(1)
+                source = ctx.local_imports.get(source_label)
+            else:
+                # Static JSON form. ``\s`` intentionally accepts non-breaking spaces copied
+                # into a few course documents around JSX attributes.
+                file_path = re.search(r"\bfile\s*=\s*([\"'])(.*?)\1", attrs, re.DOTALL)
+                if file_path:
+                    source_label = file_path.group(2).strip()
+                    source = self.resolve_local_reference(ctx.source_note, source_label)
+
+            if not source_label:
                 self.report.warn(ctx.rel_note, "Quiz trouvé mais attribut file non reconnu.")
                 return self.callout("warning", "Quiz non converti", "La définition du quiz n'a pas pu être localisée.")
-            source = ctx.local_imports.get(file_var.group(1))
             if not source or not source.is_file():
-                self.report.warn(ctx.rel_note, f"Définition Quiz introuvable pour {file_var.group(1)}.")
+                self.report.warn(ctx.rel_note, f"Définition Quiz introuvable pour {source_label}.")
                 return self.callout("warning", "Quiz non converti", "La définition du quiz est introuvable.")
 
             self.copy_source_asset(source, ctx)
+            if source.suffix.lower() == ".json":
+                rendered = render_json_quiz(source)
+                if rendered is not None:
+                    return rendered
+                self.report.warn(ctx.rel_note, f"Quiz {source.name}: JSON non reconnu; source conservée localement.")
+                return self.callout(
+                    "warning", "Quiz interactif non reconstruit",
+                    f"La définition originale `{source.name}` est conservée dans `_assets`; aucun contenu n'a été supprimé."
+                )
+
             raw = source.read_text(encoding="utf-8")
             raw_questions: dict[str, Path] = {}
             for rm in RAW_IMPORT_RE.finditer(raw):
@@ -1749,6 +1814,8 @@ export default function App() {
 
             path_part, anchor = self.split_anchor(raw_target)
             resolved = self.resolve_local_reference(ctx.source_note, path_part)
+            if not resolved:
+                resolved = self.resolve_local_reference_from_label(ctx.source_note, path_part, label)
             if resolved and resolved.is_file():
                 if resolved.suffix.lower() in MARKDOWN_EXTS:
                     mapped = self.output_map.get(resolved.resolve())
@@ -1767,8 +1834,9 @@ export default function App() {
             self.report.unresolved_local_links.append((str(ctx.rel_note), raw_target))
             return m.group(0)
 
-        # Do not rewrite examples shown literally inside fenced or inline code.
-        chunks = re.split(r"(```.*?```|`[^`\n]*`)", text, flags=re.DOTALL)
+        # Do not rewrite examples shown literally inside fenced/inline code or content that
+        # upstream authors intentionally disabled with HTML comments.
+        chunks = re.split(r"(```.*?```|`[^`\n]*`|<!--.*?-->)", text, flags=re.DOTALL)
         for i in range(0, len(chunks), 2):
             chunks[i] = pattern.sub(repl, chunks[i])
         return "".join(chunks)
@@ -1878,6 +1946,27 @@ export default function App() {
         if len(matches) == 1:
             return next(iter(matches))
         return None
+
+    def resolve_local_reference_from_label(self, note: Path, target: str, label: str) -> Path | None:
+        """Repair a narrow class of obvious syllabus route typos using the visible label.
+
+        Some course homepages label a meeting as e.g. ``9.1`` but accidentally link to
+        ``cours/r8.3``. When the target basename is an ``rN.N`` meeting route and the label
+        starts with another meeting number, try that label-derived route. The repair is used
+        only when the original link is unresolved and the derived route actually exists.
+        """
+        clean_label = re.sub(r"[*_`~]", "", label).strip()
+        hint = re.match(r"(\d+\.\d+)\b", clean_label)
+        if not hint:
+            return None
+        target = target.strip()
+        base = posixpath.basename(target)
+        if not re.fullmatch(r"r\d+\.\d+", base, re.IGNORECASE):
+            return None
+        corrected = posixpath.join(posixpath.dirname(target), f"r{hint.group(1)}")
+        if target.startswith("/") and not corrected.startswith("/"):
+            corrected = "/" + corrected
+        return self.resolve_local_reference(note, corrected)
 
     def copy_asset(self, source_file: Path, ctx: NoteContext) -> Path:
         dest_dir = ctx.asset_dir

@@ -21,7 +21,7 @@ Cette page décrit les principaux éléments reconnus par l'importeur et leur é
 | Vidéo locale | Copie locale + embed |
 | `NonVoyant` | Callout replié par défaut |
 | `Highlight` | Badge coloré compatible CSS CEM |
-| `Quiz` | Version statique locale avec réponses repliables |
+| `Quiz` | Version statique locale avec réponses repliables (`file={...}` ou JSON statique) |
 | `DocsViewer` | Index/navigation locale |
 | `SlidePage` / `SlideImage` | Contenu aplati + image locale |
 | `ConsoleWindow` | Bloc de code / console |

@@ -797,6 +797,83 @@ Texte gauche.
 
 
 
+    def test_quiz_static_json_path_is_converted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "1P6"
+            docs = root / "web" / "docs" / "01-cours"
+            quiz_dir = root / "web" / "static" / "quiz"
+            docs.mkdir(parents=True)
+            quiz_dir.mkdir(parents=True)
+            (quiz_dir / "2.1-base.json").write_text(
+                json.dumps({
+                    "titre": "Quiz JSON",
+                    "questions": [{
+                        "texte": "Que vaut x ?",
+                        "code": "int x = 2 + 2;",
+                        "choix": ["3", "4"],
+                        "reponse": 1,
+                    }],
+                }),
+                encoding="utf-8",
+            )
+            note = docs / "03-ifelse.md"
+            nbsp = "\u00a0"
+            note.write_text(f"# Conditions\n\n<Quiz{nbsp}file=\"/quiz/2.1-base.json\"{nbsp}/>\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("### 🧠 Quiz JSON", converted)
+            self.assertIn("Que vaut x ?", converted)
+            self.assertIn("int x = 2 + 2;", converted)
+            self.assertIn("**2. 4**", converted)
+            self.assertNotIn("Quiz trouvé mais attribut file non reconnu", self.report(importer))
+
+    def test_markdown_links_inside_html_comments_are_not_reported(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "5W5"
+            docs = root / "web" / "docs"
+            docs.mkdir(parents=True)
+            note = docs / "old.md"
+            note.write_text(
+                "# Ancien\n\n<!--\n![image](missing.png)\n![bad]((also-missing.png)\n-->\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            importer.run()
+            self.assertNotIn("Liens locaux non résolus", self.report(importer))
+
+    def test_broken_meeting_route_can_be_repaired_from_visible_label(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "3U4"
+            docs = root / "web" / "docs"
+            courses = docs / "01-cours"
+            courses.mkdir(parents=True)
+            target = courses / "17-r9.1.md"
+            target.write_text("# Rencontre 9.1\n", encoding="utf-8")
+            note = docs / "accueil.md"
+            note.write_text("# Accueil\n\n[9.1 → Inventaire](cours/r8.3)\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn(importer.output_map[target.resolve()].name, converted)
+            self.assertNotIn("cours/r8.3", self.report(importer))
+
+    def test_leading_underscore_file_is_helper_not_visible_note(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs" / "03-recettes"
+            docs.mkdir(parents=True)
+            visible = docs / "010-visible.md"
+            hidden = docs / "_090-autres-recettes.mdx"
+            visible.write_text("# Visible\n", encoding="utf-8")
+            hidden.write_text("# Draft\n\n[bad](/recettes/autres-recettes?onglet=x)\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            importer.run()
+            self.assertIn(visible.resolve(), importer.output_map)
+            self.assertNotIn(hidden.resolve(), importer.output_map)
+            self.assertNotIn("autres-recettes", self.report(importer))
+
+
 class PublicConfigurationTests(unittest.TestCase):
     def test_default_course_width_is_1400px(self):
         css = (Path(__file__).resolve().parents[1] / "obsidian-wide-notes.css").read_text(encoding="utf-8")
