@@ -1,0 +1,250 @@
+/* CEM course styling for Obsidian.
+   Keep Settings → Editor → Display → Readable line length enabled. */
+body {
+  --file-line-width: 1400px;
+}
+
+/* Imported notes receive cssclasses: cem-course automatically. */
+
+/* Images: Obsidian wraps Markdown images in .image-embed spans. Center the
+   wrapper itself (not just the <img>) so this works in Reading View and Live Preview. */
+.markdown-preview-view.cem-course .image-embed,
+.markdown-source-view.mod-cm6.cem-course .image-embed,
+.cem-course .image-embed {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100%;
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.markdown-preview-view.cem-course .image-embed img:not(.emoji),
+.markdown-source-view.mod-cm6.cem-course .image-embed img:not(.emoji),
+.cem-course .image-embed img:not(.emoji),
+.cem-course img:not(.emoji) {
+  display: block !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Plain HTML images and paragraphs that contain only an image. */
+.markdown-preview-view.cem-course p:has(> img:only-child),
+.markdown-preview-view.cem-course p:has(> .image-embed:only-child),
+.cem-course center {
+  text-align: center !important;
+}
+
+.cem-course iframe.cem-video {
+  display: block;
+  max-width: 100%;
+  margin: 1rem auto;
+}
+
+/* Course navigation footer: two compact previous/next cards, with a
+   deliberately quiet home link above them. */
+.cem-course .callout[data-callout="cem-nav"] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 1.35rem 0 0;
+}
+
+.cem-course .callout[data-callout="cem-nav"] > .callout-title {
+  display: none;
+}
+
+.cem-course .callout[data-callout="cem-nav"] > .callout-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "home home"
+    "prev next";
+  align-items: stretch;
+  column-gap: 0.8rem;
+  row-gap: 0.45rem;
+  padding: 0;
+}
+
+/* The first paragraph is the Sommaire link — intentionally not a card. */
+.cem-course .callout[data-callout="cem-nav"] > .callout-content > p:first-child {
+  grid-area: home;
+  justify-self: center;
+  margin: 0 0 0.15rem;
+  padding: 0;
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.cem-course .callout[data-callout="cem-nav"] > .callout-content > p:first-child a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.cem-course .callout[data-callout="cem-nav"] > .callout-content > p:first-child a:hover {
+  color: var(--interactive-accent);
+}
+
+.cem-course .callout[data-callout="cem-prev"],
+.cem-course .callout[data-callout="cem-next"] {
+  margin: 0;
+  min-width: 0;
+  min-height: 76px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  box-shadow: none;
+  border-radius: 6px;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.cem-course .callout[data-callout="cem-prev"] { grid-area: prev; }
+.cem-course .callout[data-callout="cem-next"] { grid-area: next; text-align: right; }
+
+.cem-course .callout[data-callout="cem-prev"]:hover,
+.cem-course .callout[data-callout="cem-next"]:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary-alt);
+}
+
+.cem-course .callout[data-callout="cem-prev"] > .callout-title,
+.cem-course .callout[data-callout="cem-next"] > .callout-title {
+  min-height: 0;
+  padding: 0.5rem 0.7rem 0;
+  font-size: 0.72em;
+  line-height: 1.2;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.cem-course .callout[data-callout="cem-prev"] > .callout-title .callout-icon,
+.cem-course .callout[data-callout="cem-next"] > .callout-title .callout-icon {
+  display: none;
+}
+
+.cem-course .callout[data-callout="cem-prev"] > .callout-content,
+.cem-course .callout[data-callout="cem-next"] > .callout-content {
+  padding: 0.22rem 0.7rem 0.55rem;
+  display: flex;
+  align-items: center;
+}
+
+.cem-course .callout[data-callout="cem-next"] > .callout-content {
+  justify-content: flex-end;
+}
+
+.cem-course .callout[data-callout="cem-prev"] a,
+.cem-course .callout[data-callout="cem-next"] a {
+  display: block;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92em;
+  line-height: 1.35;
+}
+
+/* Docusaurus <Row>/<Column> → invisible responsive callout grid. */
+.cem-course .callout[data-callout="cem-columns"],
+.cem-course .callout[data-callout="cem-column"] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cem-course .callout[data-callout="cem-columns"] > .callout-title,
+.cem-course .callout[data-callout="cem-column"] > .callout-title {
+  display: none;
+}
+
+.cem-course .callout[data-callout="cem-columns"] > .callout-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 1.5rem;
+  padding: 0;
+}
+
+.cem-course .callout[data-callout="cem-column"] > .callout-content {
+  padding: 0;
+}
+
+.cem-course .callout[data-callout="cem-column"] h2:first-child,
+.cem-course .callout[data-callout="cem-column"] h3:first-child {
+  margin-top: 0;
+}
+
+@media (max-width: 800px) {
+  .cem-course .callout[data-callout="cem-columns"] > .callout-content {
+    grid-template-columns: 1fr;
+  }
+
+  .cem-course .callout[data-callout="cem-nav"] > .callout-content {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "home"
+      "prev"
+      "next";
+  }
+
+  .cem-course .callout[data-callout="cem-next"] {
+    text-align: left;
+  }
+
+  .cem-course .callout[data-callout="cem-next"] > .callout-content {
+    justify-content: flex-start;
+  }
+}
+
+/* CEM inline highlights: reproduce the department site's badge-like Highlight
+   component instead of Obsidian's very thin default marker. */
+.cem-course .cem-highlight,
+.cem-course mark {
+  display: inline;
+  padding: 0.08em 0.30em 0.12em;
+  border-radius: 3px;
+  font-weight: 500;
+  line-height: 1.65;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* Colours mirror web/src/components/Highlight from the CEM course sites. */
+.cem-course .cem-highlight-tip {
+  background: #198754;
+  color: #fff;
+}
+
+.cem-course .cem-highlight-caution {
+  background: #b58d20;
+  color: #fff;
+}
+
+.cem-course .cem-highlight-info {
+  background: #0d6efd;
+  color: #fff;
+}
+
+.cem-course .cem-highlight-danger {
+  background: #dc3545;
+  color: #fff;
+}
+
+.cem-course .cem-highlight-note {
+  background: #6c757d;
+  color: #fff;
+}
+
+.cem-course .cem-highlight-default {
+  background: #0dcaf0;
+  color: #111;
+}
+
+/* Native ==highlight== that already exists in imported Markdown gets the same
+   thicker shape while keeping the active theme's highlight colour. */
+.cem-course mark {
+  background: var(--text-highlight-bg);
+  color: inherit;
+}
