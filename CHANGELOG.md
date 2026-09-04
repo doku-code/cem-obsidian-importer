@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.13
+
+- normalise les dossiers pédagogiques de premier niveau vers des noms canoniques communs aux 13 dépôts CEM supportés;
+- convertit notamment `01-notes`/`01-cours` en `Cours`, `tp`/`tps` en `TP`, toutes les variantes `labo`/`labos`/`laboratoire(s)` en `Laboratoire`, et `aidememoire` en `Aide-mémoire`;
+- couvre aussi les sections observées `Recettes`, `Solution`, `Extra`, `Défis`, `Informations`, `Exercices`, `Archives`, `Angular`, `Python`, `Colab`, `NumPy & Keras`, `Google Cloud`, `Projet Web` et `Dans l'autobus`;
+- conserve la numérotation des notes de cours et ne normalise que le premier niveau de dossiers sous le contenu généré;
+- garde les noms inconnus avec leur préfixe numérique au lieu de deviner leur signification;
+- ajoute une protection contre les collisions : deux dossiers source qui aboutiraient au même nom canonique conservent leurs noms préfixés et génèrent un avertissement;
+- documente dans le README des règles Iconize `Folders only`, avec une variante recommandée limitée aux chemins CEM;
+- ajoute `assets/iconize/cem-symbol-iconize.svg` comme icône CEM optionnelle pour les custom icon packs Iconize;
+- ajoute des tests de régression pour la matrice d'alias, la conservation des numéros de notes, les dossiers inconnus et les collisions.
+
+## 0.2.12
+
+- Prevent Dataview inline-query parsing from hijacking legitimate inline code that starts with `=` or `$=`.
+- Preserve fenced code verbatim while rendering only conflicting inline spans as HTML `<code>`.
+- Add regression coverage for the 1P6 assignment/comparison operator lesson.
+- Move the shared department Git guide out of its one-file `Ressources` folder and place it directly at the Cégep import root.
+
+
 ## 0.2.11
 
 - normalise les corps de `TabItem` avant toute conversion de composant afin d'empêcher les remplacements précoces (images, Feedback, fragments MDX) de casser l'indentation globale de 420-SN1;

@@ -33,7 +33,6 @@ ENGINE_PATH = PROJECT_ROOT / "cem_to_obsidian.py"
 CSS_SOURCE = PROJECT_ROOT / "obsidian-wide-notes.css"
 REPORTS_ROOT = PROJECT_ROOT / "reports"
 DEFAULT_NOTES_FOLDER = "Cours"
-DEPARTMENT_RESOURCES_FOLDER = "Ressources"
 GIT_GUIDE_FILENAME = "Git - Consignes du département.md"
 GIT_GUIDE_SOURCE_PAGE = "https://info.cegepmontpetit.ca/git"
 GIT_GUIDE_RAW_URL = (
@@ -192,7 +191,7 @@ def sync_department_git_guide(
     quiet: bool = False,
     fetcher=None,
 ) -> Path:
-    """Download the department-wide Git guide into the shared resources folder.
+    """Download the department-wide Git guide directly into the Cégep import root.
 
     This resource applies to every course, so it is intentionally synchronized
     on every launcher run instead of appearing in the course selection menu.
@@ -211,9 +210,8 @@ def sync_department_git_guide(
     if not isinstance(source, str) or not source.strip():
         raise RuntimeError("La page Git départementale téléchargée est vide.")
 
-    resources = destination / DEPARTMENT_RESOURCES_FOLDER
-    resources.mkdir(parents=True, exist_ok=True)
-    target = resources / GIT_GUIDE_FILENAME
+    destination.mkdir(parents=True, exist_ok=True)
+    target = destination / GIT_GUIDE_FILENAME
     target.write_text(build_department_git_note(source), encoding="utf-8")
 
     if not quiet:

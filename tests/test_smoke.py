@@ -20,6 +20,85 @@ class ImporterConversionTests(unittest.TestCase):
     def report(importer: CEMImporter) -> str:
         return (importer.report_dir / "report.md").read_text(encoding="utf-8")
 
+
+    def test_supported_top_level_sections_are_normalized_conservatively(self):
+        cases = {
+            "01-cours": "Cours",
+            "01-notes": "Cours",
+            "02-tp": "TP",
+            "04-tps": "TP",
+            "03-laboratoire": "Laboratoire",
+            "03-labos": "Laboratoire",
+            "04-laboratoires": "Laboratoire",
+            "03-recettes": "Recettes",
+            "04-aidememoire": "Aide-mémoire",
+            "04-solution": "Solution",
+            "05-extra": "Extra",
+            "06-defis": "Défis",
+            "03-autres": "Autres",
+            "02-info": "Informations",
+            "03-exercices": "Exercices",
+            "05-anciens": "Archives",
+            "tp_archives_idees": "Archives",
+            "04-angular": "Angular",
+            "03-python": "Python",
+            "04-colab": "Colab",
+            "05-numpykeras": "NumPy & Keras",
+            "06-googlecloud": "Google Cloud",
+            "03-projet-web": "Projet Web",
+            "04-dans-autobus": "Dans l'autobus",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(CEMImporter.canonical_section_name(source), expected)
+
+    def test_output_uses_canonical_section_names_but_keeps_note_numbering(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "4W6-WebServices"
+            notes = root / "web" / "docs" / "01-notes"
+            labs = root / "web" / "docs" / "03-labos"
+            notes.mkdir(parents=True)
+            labs.mkdir(parents=True)
+            lesson = notes / "01-intro.md"
+            lab = labs / "02-api.md"
+            lesson.write_text("# Introduction\n", encoding="utf-8")
+            lab.write_text("# API\n", encoding="utf-8")
+
+            importer = CEMImporter(root, Path(td) / "out")
+            self.assertEqual(importer.output_map[lesson.resolve()].parent, Path("Cours"))
+            self.assertEqual(importer.output_map[lab.resolve()].parent, Path("Laboratoire"))
+            self.assertTrue(importer.output_map[lesson.resolve()].name.startswith("01 - "))
+            self.assertTrue(importer.output_map[lab.resolve()].name.startswith("02 - "))
+
+    def test_unknown_top_level_section_keeps_legacy_prefix(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "future-course"
+            docs = root / "web" / "docs" / "07-nouveau-truc"
+            docs.mkdir(parents=True)
+            note = docs / "01-demo.md"
+            note.write_text("# Démo\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            self.assertEqual(
+                importer.output_map[note.resolve()].parent,
+                Path("07 - Nouveau truc"),
+            )
+
+    def test_canonical_section_collision_falls_back_instead_of_merging(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "future-course"
+            tp1 = root / "web" / "docs" / "02-tp"
+            tp2 = root / "web" / "docs" / "04-tps"
+            tp1.mkdir(parents=True)
+            tp2.mkdir(parents=True)
+            n1 = tp1 / "01-a.md"
+            n2 = tp2 / "01-b.md"
+            n1.write_text("# A\n", encoding="utf-8")
+            n2.write_text("# B\n", encoding="utf-8")
+            importer = CEMImporter(root, Path(td) / "out")
+            self.assertEqual(importer.output_map[n1.resolve()].parent, Path("02 - TP"))
+            self.assertEqual(importer.output_map[n2.resolve()].parent, Path("04 - TP"))
+            self.assertTrue(any("fusion ambiguë" in msg for _, msg in importer.report.warnings))
+
     def test_representative_4w6_mdx(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "4W6-WebServices"
@@ -255,12 +334,12 @@ class ImporterConversionTests(unittest.TestCase):
             result = importer.run()
             p1 = importer.output_map[n1.resolve()]
             p2 = importer.output_map[n2.resolve()]
-            self.assertEqual(p1.parent.name, "01 - Notes de cours")
+            self.assertEqual(p1.parent.name, "Cours")
             self.assertTrue(p1.name.startswith("1.1 - Intro à React"))
             self.assertTrue(p2.name.startswith("1.2 - Composant dynamique"))
             nav = (result / "00 - Navigation.md").read_text(encoding="utf-8")
             self.assertLess(nav.index("1.1 - Intro"), nav.index("1.2 - Composant"))
-            self.assertIn("## Notes de cours", nav)
+            self.assertIn("## Cours", nav)
 
     def test_obsidian_angle_bracket_link_is_not_mistaken_for_mdx(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1221,7 +1300,7 @@ class PublicConfigurationTests(unittest.TestCase):
             )
             self.assertEqual(
                 target,
-                destination / "Ressources" / "Git - Consignes du département.md",
+                destination / "Git - Consignes du département.md",
             )
             rendered = target.read_text(encoding="utf-8")
             self.assertIn("source: https://info.cegepmontpetit.ca/git", rendered)
@@ -1272,6 +1351,23 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(3", css)
         self.assertIn(".badge.text-bg-warning", css)
         self.assertIn("img.cem-inline-image", css)
+
+    def test_dataview_does_not_hijack_equals_inline_code(self):
+        source = "### ⚠️ `=` vs `==`\n\n- `=` : affectation\n- `==` : comparaison\n- `x = 5` reste normal\n"
+        rendered = CEMImporter.escape_dataview_inline_query_collisions(source)
+        self.assertIn("<code>=</code> vs <code>==</code>", rendered)
+        self.assertIn("<code>=</code> : affectation", rendered)
+        self.assertIn("<code>==</code> : comparaison", rendered)
+        self.assertIn("`x = 5` reste normal", rendered)
+        self.assertNotIn("`=`", rendered)
+        self.assertNotIn("`==`", rendered)
+
+    def test_dataview_collision_fix_preserves_fenced_code(self):
+        source = "Avant `=`\n\n```text\n`=`\n`==`\n```\n\nAprès `$= demo`\n"
+        rendered = CEMImporter.escape_dataview_inline_query_collisions(source)
+        self.assertIn("Avant <code>=</code>", rendered)
+        self.assertIn("```text\n`=`\n`==`\n```", rendered)
+        self.assertIn("Après <code>$= demo</code>", rendered)
 
     def test_public_version_is_semantic(self):
         self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")

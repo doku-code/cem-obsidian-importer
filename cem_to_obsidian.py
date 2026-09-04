@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -172,6 +173,7 @@ class CEMImporter:
         self.report = Report()
         self._asset_sources: dict[Path, Path] = {}
         self.content_notes = self.discover_content_notes()
+        self.section_name_map = self.build_section_name_map()
         self.route_index = self.build_route_index()
         self.sidebar_entries = self.parse_sidebars()
         self.sidebar_labels = self.build_sidebar_labels()
@@ -301,27 +303,138 @@ class CEMImporter:
         value = re.sub(r"\s+", " ", value).strip().rstrip(".")
         return value or "Note"
 
+    # Canonical names are deliberately limited to section aliases observed in the
+    # supported CEM repositories. Unknown/future section names keep the legacy
+    # humanized output (including their numeric prefix) instead of being guessed.
+    # This keeps normalization useful without silently changing the meaning of new
+    # upstream structures.
+    SECTION_NAME_ALIASES: dict[str, str] = {
+        "cours": "Cours",
+        "notes": "Cours",
+        "note": "Cours",
+        "tp": "TP",
+        "tps": "TP",
+        "laboratoire": "Laboratoire",
+        "laboratoires": "Laboratoire",
+        "labo": "Laboratoire",
+        "labos": "Laboratoire",
+        "recette": "Recettes",
+        "recettes": "Recettes",
+        "solution": "Solution",
+        "solutions": "Solution",
+        "extra": "Extra",
+        "extras": "Extra",
+        "defi": "Défis",
+        "defis": "Défis",
+        "autre": "Autres",
+        "autres": "Autres",
+        "aidememoire": "Aide-mémoire",
+        "aide-memoire": "Aide-mémoire",
+        "aide-memoires": "Aide-mémoire",
+        "info": "Informations",
+        "infos": "Informations",
+        "information": "Informations",
+        "informations": "Informations",
+        "exercice": "Exercices",
+        "exercices": "Exercices",
+        "ancien": "Archives",
+        "anciens": "Archives",
+        "archive": "Archives",
+        "archives": "Archives",
+        "tp-archives-idees": "Archives",
+        "angular": "Angular",
+        "python": "Python",
+        "colab": "Colab",
+        "numpykeras": "NumPy & Keras",
+        "numpy-keras": "NumPy & Keras",
+        "googlecloud": "Google Cloud",
+        "google-cloud": "Google Cloud",
+        "projet-web": "Projet Web",
+        "dans-autobus": "Dans l'autobus",
+    }
+
+    @staticmethod
+    def normalized_section_key(segment: str) -> str:
+        """Normalize a source directory name only for alias lookup.
+
+        Numeric Docusaurus sort prefixes are discarded here, but the original
+        segment is retained elsewhere for safe fallback when an alias is unknown.
+        """
+        base = re.sub(r"^\d+[-_]", "", segment.strip())
+        ascii_base = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"[^a-z0-9]+", "-", ascii_base.lower()).strip("-")
+
+    @classmethod
+    def canonical_section_name(cls, segment: str) -> str | None:
+        return cls.SECTION_NAME_ALIASES.get(cls.normalized_section_key(segment))
+
     @staticmethod
     def humanize_segment(segment: str) -> str:
+        """Legacy-safe humanization used for unknown or nested directories.
+
+        Known top-level pedagogical sections are normalized separately by
+        ``build_section_name_map``. Keeping this function prefix-preserving is
+        intentional: if a future repository introduces an unknown section, the
+        importer must not silently strip ordering information.
+        """
         prefix_m = re.match(r"^(\d+)[-_](.+)$", segment)
         prefix = prefix_m.group(1) if prefix_m else None
         base = prefix_m.group(2) if prefix_m else segment
-        key = base.lower().replace("_", "-")
+        key = CEMImporter.normalized_section_key(base)
         common = {
             "notes": "Notes de cours",
             "cours": "Cours",
             "tp": "TP",
+            "tps": "TP",
             "recettes": "Recettes",
-            "labos": "Laboratoires",
-            "labo": "Laboratoires",
+            "laboratoire": "Laboratoire",
+            "laboratoires": "Laboratoire",
+            "labos": "Laboratoire",
+            "labo": "Laboratoire",
+            "solution": "Solution",
+            "solutions": "Solution",
             "autres": "Autres",
             "angular": "Angular",
+            "aidememoire": "Aide-mémoire",
         }
         label = common.get(key)
         if label is None:
             label = re.sub(r"[-_]+", " ", base).strip()
             label = label[:1].upper() + label[1:] if label else base
         return f"{prefix} - {label}" if prefix else label
+
+    def build_section_name_map(self) -> dict[str, str]:
+        """Return safe output names for top-level pedagogical section folders.
+
+        Only aliases verified in the supported CEM repositories lose their numeric
+        prefix. If two different source folders would collapse to the same canonical
+        name, both keep their legacy prefixed names and a warning is recorded. This
+        collision guard is important for future repository changes.
+        """
+        sections = sorted({
+            note.relative_to(self.docs_root).parts[0]
+            for note in self.content_notes
+            if len(note.relative_to(self.docs_root).parts) > 1
+        })
+        proposed: dict[str, str] = {}
+        by_canonical: dict[str, list[str]] = {}
+        for section in sections:
+            canonical = self.canonical_section_name(section)
+            proposed[section] = canonical or self.humanize_segment(section)
+            if canonical:
+                by_canonical.setdefault(canonical, []).append(section)
+
+        for canonical, sources in by_canonical.items():
+            if len(sources) < 2:
+                continue
+            for source in sources:
+                proposed[source] = self.humanize_segment(source)
+            self.report.warn(
+                "structure",
+                "Normalisation de dossier annulée pour éviter une fusion ambiguë: "
+                f"{', '.join(sources)} → {canonical}",
+            )
+        return proposed
 
     @staticmethod
     def read_frontmatter_title(note: Path) -> str | None:
@@ -391,7 +504,15 @@ class CEMImporter:
         used: dict[Path, Path] = {}
         for note in self.content_notes:
             rel = note.relative_to(self.docs_root)
-            parent_parts = [self.humanize_segment(p) for p in rel.parts[:-1]]
+            parent_parts: list[str] = []
+            for index, part in enumerate(rel.parts[:-1]):
+                if index == 0:
+                    # Top-level Docusaurus sections are normalized across courses
+                    # (01-notes/01-cours -> Cours, 03-labos -> Laboratoire, etc.).
+                    # Nested directories stay conservative and keep legacy naming.
+                    parent_parts.append(self.section_name_map.get(part, self.humanize_segment(part)))
+                else:
+                    parent_parts.append(self.humanize_segment(part))
             candidate = Path(*parent_parts, self.friendly_note_name(note)) if parent_parts else Path(self.friendly_note_name(note))
             if candidate in used and used[candidate] != note:
                 fallback = self.sanitize_filename(f"{Path(candidate).stem} [{note.stem}]") + ".md"
@@ -564,6 +685,7 @@ class CEMImporter:
         text = self.normalize_tabitem_sources(text)
         text = self.sanitize_code_fences(text)
         text = self.apply_transform_pipeline(text, ctx)
+        text = self.escape_dataview_inline_query_collisions(text)
         # Detect leftover MDX *before* generating Obsidian links. Markdown destinations are
         # deliberately wrapped in angle brackets when they contain spaces, e.g.
         # `[Voir](<Librairie Standard.md>)`; scanning after link rewriting would mistake
@@ -1959,6 +2081,33 @@ export default function App() {
 
         return "\n".join(out)
 
+
+    @staticmethod
+    def escape_dataview_inline_query_collisions(text: str) -> str:
+        """Keep ordinary inline code from being hijacked by the Dataview plugin.
+
+        Dataview treats backtick spans whose content starts with ``=`` (and ``$=`` for
+        inline JavaScript) as executable inline queries.  CEM course notes legitimately
+        use inline code such as `` `=` `` and `` `==` `` when teaching assignment and
+        comparison operators.  In a vault with Dataview enabled, those perfectly normal
+        Markdown spans therefore render as "PARSING FAILED" errors.
+
+        Render only the conflicting spans as equivalent HTML ``<code>`` elements. Fenced
+        code blocks are preserved verbatim, and all other inline-code spans stay Markdown.
+        """
+        fenced_chunks = re.split(r"(```.*?```)", text, flags=re.DOTALL)
+        inline_re = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
+
+        def repl(match: re.Match[str]) -> str:
+            value = match.group(1)
+            if value.startswith("=") or value.startswith("$="):
+                return f"<code>{html.escape(value)}</code>"
+            return match.group(0)
+
+        for i in range(0, len(fenced_chunks), 2):
+            fenced_chunks[i] = inline_re.sub(repl, fenced_chunks[i])
+        return "".join(fenced_chunks)
+
     def rewrite_markdown_links(self, text: str, ctx: NoteContext) -> str:
         pattern = re.compile(r"(!?)\[([^\]]*)\]\(([^)]+)\)")
 
@@ -2347,14 +2496,24 @@ export default function App() {
     @staticmethod
     def sidebar_section_label(section: str) -> str:
         labels = {
-            "docs": "Notes de cours",
+            "docs": "Cours",
+            "notes": "Cours",
             "cours": "Cours",
-            "tp": "Travaux pratiques",
+            "tp": "TP",
+            "tps": "TP",
             "recettes": "Recettes",
-            "labos": "Laboratoires",
-            "labo": "Laboratoires",
+            "laboratoire": "Laboratoire",
+            "laboratoires": "Laboratoire",
+            "labos": "Laboratoire",
+            "labo": "Laboratoire",
+            "solution": "Solution",
+            "solutions": "Solution",
             "autres": "Autres",
             "angular": "Angular",
+            "info": "Informations",
+            "exercices": "Exercices",
+            "anciens": "Archives",
+            "aidememoire": "Aide-mémoire",
         }
         return labels.get(section.lower(), section.replace("_", " ").replace("-", " ").title())
 
