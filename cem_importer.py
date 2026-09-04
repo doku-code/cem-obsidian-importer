@@ -21,6 +21,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,7 @@ class ImportResult:
     unknown_components: int = 0
     unresolved_links: int = 0
     warnings: int = 0
-    report_path: Path | None = None
+    report_data: dict[str, Any] | None = None
     error: str = ""
 
 
@@ -248,33 +249,19 @@ def prompt_courses() -> list[Course]:
         print("\nD'accord, choisis à nouveau.")
 
 
-def report_dir_for(course: Course) -> Path:
-    """Central report directory for one course, kept outside the Obsidian vault."""
+def read_conversion_report(path: Path) -> dict[str, Any]:
+    """Read one engine report produced in the temporary run workspace."""
 
-    return REPORTS_ROOT / course.code
-
-
-def report_path_for(course: Course) -> Path:
-    return report_dir_for(course) / "report.json"
-
-
-def read_conversion_summary(path: Path) -> dict[str, int]:
     if not path.is_file():
-        return {
-            "issue_count": 0,
-            "unknown_components": 0,
-            "unresolved_links": 0,
-            "warnings": 0,
-        }
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {
-            "issue_count": 0,
-            "unknown_components": 0,
-            "unresolved_links": 0,
-            "warnings": 0,
-        }
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def summarize_conversion_report(data: dict[str, Any]) -> dict[str, int]:
     issues = data.get("issues", {}) if isinstance(data, dict) else {}
     return {
         "issue_count": int(issues.get("count", 0) or 0),
@@ -284,8 +271,15 @@ def read_conversion_summary(path: Path) -> dict[str, int]:
     }
 
 
-def run_course_import(course: Course, destination: Path) -> ImportResult:
+def run_course_import(course: Course, destination: Path, temporary_report_root: Path) -> ImportResult:
+    """Import one course and keep its raw diagnostics only for this run.
+
+    Per-course reports are intentionally written to a temporary workspace. The
+    launcher later merges them into a single detailed report under ``reports/``.
+    """
+
     output_parent = destination / course.session_folder / course.folder
+    report_dir = temporary_report_root / course.code
     cmd = [
         sys.executable,
         str(ENGINE_PATH),
@@ -297,7 +291,7 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
         "--copy-all-static",
         "--force",
         "--report-dir",
-        str(report_dir_for(course)),
+        str(report_dir),
         "--report-source",
         course.repo,
     ]
@@ -308,30 +302,63 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
     print(f"{'─' * 72}")
 
     completed = subprocess.run(cmd, text=True)
-    report_path = report_path_for(course)
+    report_path = report_dir / "report.json"
+    report_data = read_conversion_report(report_path)
+
     if completed.returncode != 0:
         return ImportResult(
             course=course,
             succeeded=False,
-            report_path=report_path if report_path.exists() else None,
+            report_data=report_data or None,
             error=f"Le convertisseur a quitté avec le code {completed.returncode}.",
         )
 
-    summary = read_conversion_summary(report_path)
+    summary = summarize_conversion_report(report_data)
     return ImportResult(
         course=course,
         succeeded=True,
-        report_path=report_path if report_path.exists() else None,
+        report_data=report_data or None,
         **summary,
     )
 
 
-def write_aggregate_report(results: list[ImportResult], destination: Path) -> tuple[Path, Path]:
-    """Write a compact run summary beside the per-course reports."""
+def _course_payload(result: ImportResult) -> dict[str, Any]:
+    report_data = result.report_data or {}
+    return {
+        "code": result.course.code,
+        "name": result.course.folder,
+        "session": result.course.session,
+        "repo": result.course.repo,
+        "succeeded": result.succeeded,
+        "issues": result.issue_count,
+        "unknown_components": result.unknown_components,
+        "unresolved_links": result.unresolved_links,
+        "warnings": result.warnings,
+        "stats": report_data.get("stats", {}),
+        "details": report_data.get("details", {}),
+        "error": result.error or None,
+    }
 
+
+def reset_reports_root() -> None:
+    """Start each launcher run with one clean, flat reports directory."""
+
+    if REPORTS_ROOT.exists():
+        shutil.rmtree(REPORTS_ROOT)
     REPORTS_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def write_aggregate_report(results: list[ImportResult], destination: Path) -> tuple[Path, Path]:
+    """Write one human report plus one machine-readable companion.
+
+    There are deliberately no per-course report folders. Course sections are
+    separated inside the Markdown report so diagnostics stay easy to browse.
+    """
+
+    reset_reports_root()
     hard_failures = [result for result in results if not result.succeeded]
     issue_results = [result for result in results if result.succeeded and result.issue_count > 0]
+    clean_results = [result for result in results if result.succeeded and result.issue_count == 0]
     total_issues = sum(result.issue_count for result in issue_results)
 
     payload = {
@@ -340,27 +367,18 @@ def write_aggregate_report(results: list[ImportResult], destination: Path) -> tu
         "imports_succeeded": len(results) - len(hard_failures),
         "import_errors": len(hard_failures),
         "conversion_issues": total_issues,
-        "courses": [
-            {
-                "code": result.course.code,
-                "name": result.course.folder,
-                "repo": result.course.repo,
-                "succeeded": result.succeeded,
-                "issues": result.issue_count,
-                "unknown_components": result.unknown_components,
-                "unresolved_links": result.unresolved_links,
-                "warnings": result.warnings,
-                "report": str(result.report_path.with_suffix(".md")) if result.report_path else None,
-                "error": result.error or None,
-            }
-            for result in results
-        ],
+        "courses": [_course_payload(result) for result in results],
     }
     json_path = REPORTS_ROOT / "summary.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     lines = [
-        "# Résumé d'import CEM → Obsidian",
+        "# Rapport détaillé — CEM → Obsidian",
+        "",
+        "Ce fichier regroupe le résultat complet du dernier lancement. "
+        "Aucun rapport de diagnostic n'est écrit dans le vault Obsidian.",
+        "",
+        "## Vue d'ensemble",
         "",
         f"- Destination : `{destination}`",
         f"- Cours demandés : **{len(results)}**",
@@ -368,24 +386,124 @@ def write_aggregate_report(results: list[ImportResult], destination: Path) -> tu
         f"- Erreurs d'import : **{len(hard_failures)}**",
         f"- Problèmes de conversion : **{total_issues}**",
         "",
-        "## Cours",
-        "",
+        "| État | Cours | Problèmes | MDX inconnus | Liens | Avertissements |",
+        "|---|---|---:|---:|---:|---:|",
     ]
+
     for result in results:
         status = "✅" if result.succeeded and result.issue_count == 0 else ("⚠️" if result.succeeded else "❌")
-        lines.append(f"- {status} **{result.course.code}** — {result.course.folder}")
-        if result.succeeded and result.issue_count:
-            lines.append(
-                f"  - {result.issue_count} problème(s): "
-                f"{result.unknown_components} composant(s) inconnu(s), "
-                f"{result.unresolved_links} lien(s), {result.warnings} avertissement(s)"
-            )
-        if result.error:
-            lines.append(f"  - Erreur : {result.error}")
-        if result.report_path:
-            lines.append(f"  - Rapport : `{result.report_path.with_suffix('.md')}`")
-    lines.append("")
-    md_path = REPORTS_ROOT / "summary.md"
+        display_name = result.course.folder.removeprefix(result.course.code + " - ")
+        lines.append(
+            f"| {status} | {result.course.code} — {display_name} "
+            f"| {result.issue_count if result.succeeded else '—'} "
+            f"| {result.unknown_components if result.succeeded else '—'} "
+            f"| {result.unresolved_links if result.succeeded else '—'} "
+            f"| {result.warnings if result.succeeded else '—'} |"
+        )
+
+    if hard_failures:
+        lines += ["", "## ❌ Erreurs d'import", ""]
+        for result in hard_failures:
+            lines += [
+                f"### {result.course.code} — {result.course.folder}",
+                "",
+                f"- Repo : `{result.course.repo}`",
+                f"- Erreur : {result.error or 'Erreur non détaillée.'}",
+                "",
+            ]
+
+    if issue_results:
+        lines += ["", "## ⚠️ Détails des problèmes de conversion", ""]
+        for result in issue_results:
+            data = result.report_data or {}
+            details = data.get("details", {}) if isinstance(data, dict) else {}
+            unknown = details.get("unknown_components", {})
+            unresolved = details.get("unresolved_local_links", [])
+            warnings = details.get("warnings", [])
+
+            lines += [
+                f"### {result.course.code} — {result.course.folder}",
+                "",
+                f"**{result.issue_count} problème(s)** "
+                f"({result.unknown_components} MDX inconnu(s), "
+                f"{result.unresolved_links} lien(s), {result.warnings} avertissement(s))",
+                "",
+            ]
+
+            if unknown:
+                lines += ["#### Composants MDX inconnus", ""]
+                for name, count in sorted(unknown.items(), key=lambda item: (-int(item[1]), item[0])):
+                    lines.append(f"- `{name}` : {count} occurrence(s)")
+                lines.append("")
+
+            if unresolved:
+                lines += ["#### Liens locaux non résolus", ""]
+                for item in unresolved:
+                    if isinstance(item, dict):
+                        note = item.get("note", "?")
+                        target = item.get("target", "?")
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                        note, target = item[0], item[1]
+                    else:
+                        note, target = "?", str(item)
+                    lines.append(f"- `{note}` → `{target}`")
+                lines.append("")
+
+            if warnings:
+                lines += ["#### Avertissements", ""]
+                for item in warnings:
+                    if isinstance(item, dict):
+                        note = item.get("note", "?")
+                        message = item.get("message", "?")
+                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                        note, message = item[0], item[1]
+                    else:
+                        note, message = "?", str(item)
+                    lines.append(f"- `{note}` : {message}")
+                lines.append("")
+
+            if not unknown and not unresolved and not warnings:
+                lines += [
+                    "> Les compteurs signalent un problème, mais aucun détail structuré "
+                    "n'était disponible dans le rapport du moteur.",
+                    "",
+                ]
+
+    if clean_results:
+        lines += ["", "## ✅ Cours sans problème détecté", ""]
+        for result in clean_results:
+            lines.append(f"- **{result.course.code}** — {result.course.folder}")
+        lines.append("")
+
+    lines += [
+        "",
+        "## Statistiques de conversion",
+        "",
+        "| Cours | Notes | Assets | Snippets | Vidéos | Callouts | Layouts | Playgrounds |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for result in results:
+        stats = (result.report_data or {}).get("stats", {})
+        lines.append(
+            f"| {result.course.code} "
+            f"| {stats.get('notes', '—')} "
+            f"| {stats.get('assets', '—')} "
+            f"| {stats.get('snippets_inlined', '—')} "
+            f"| {stats.get('videos', '—')} "
+            f"| {stats.get('admonitions', '—')} "
+            f"| {stats.get('layout_rows', '—')} "
+            f"| {stats.get('react_playgrounds', '—')} |"
+        )
+
+    lines += [
+        "",
+        "---",
+        "",
+        "`summary.json` contient les mêmes données sous forme structurée pour le débogage et l'automatisation.",
+        "",
+    ]
+
+    md_path = REPORTS_ROOT / "detail-summary.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     return md_path, json_path
 
@@ -404,11 +522,11 @@ def print_final_summary(results: list[ImportResult], destination: Path) -> int:
     print(f"Erreurs d'import       : {len(hard_failures)}")
     print(f"Problèmes de conversion: {total_issues}")
     summary_md, _ = write_aggregate_report(results, destination)
-    print(f"Rapports              : {REPORTS_ROOT}")
+    print(f"Rapport détaillé      : {summary_md}")
 
     if not hard_failures and not issue_results:
         print("\n✓ Aucun problème détecté dans les cours importés.")
-        print(f"📄 Résumé : {summary_md}")
+        print(f"📄 Rapport : {summary_md}")
         return 0
 
     if hard_failures:
@@ -430,10 +548,8 @@ def print_final_summary(results: list[ImportResult], destination: Path) -> int:
                 details.append(f"{result.warnings} avertissement(s)")
             detail_text = ", ".join(details) or "voir le rapport"
             print(f"  ⚠ {result.course.code}: {result.issue_count} — {detail_text}")
-            if result.report_path:
-                print(f"      {result.report_path.with_suffix('.md')}")
 
-    print(f"\n📄 Résumé : {summary_md}")
+    print(f"\n📄 Rapport détaillé : {summary_md}")
 
     # A conversion warning does not make the launcher itself fail. A hard import
     # failure does, which is useful for CI or scripted runs later on.
@@ -451,8 +567,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     sync_css(destination)
 
     selected = prompt_courses()
-    results = [run_course_import(course, destination) for course in selected]
-    return print_final_summary(results, destination)
+    with tempfile.TemporaryDirectory(prefix="cem-obsidian-reports-") as td:
+        temporary_report_root = Path(td)
+        results = [
+            run_course_import(course, destination, temporary_report_root)
+            for course in selected
+        ]
+        return print_final_summary(results, destination)
 
 
 def cmd_list_courses(args: argparse.Namespace) -> int:

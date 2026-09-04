@@ -54,6 +54,7 @@ class ImporterConversionTests(unittest.TestCase):
                 (importer.report_dir / "report.json").read_text(encoding="utf-8")
             )
             self.assertIn("issues", report_json)
+            self.assertIn("details", report_json)
             self.assertEqual(report_json["issues"]["count"], 0)
 
     def test_3m5_layout_and_video(self):
@@ -846,16 +847,17 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertEqual(sessions["5N6"], 6)
         self.assertIsNone(sessions["Z03"])
 
-    def test_reports_are_centralized_outside_the_vault(self):
+    def test_reports_are_flat_and_reset_between_runs(self):
         with tempfile.TemporaryDirectory() as td:
             original = manager.REPORTS_ROOT
             try:
                 manager.REPORTS_ROOT = Path(td) / "reports"
-                course = next(course for course in manager.COURSES if course.code == "3M5")
-                self.assertEqual(
-                    manager.report_path_for(course),
-                    manager.REPORTS_ROOT / "3M5" / "report.json",
-                )
+                legacy = manager.REPORTS_ROOT / "3M5"
+                legacy.mkdir(parents=True)
+                (legacy / "report.md").write_text("legacy", encoding="utf-8")
+                manager.reset_reports_root()
+                self.assertTrue(manager.REPORTS_ROOT.is_dir())
+                self.assertEqual(list(manager.REPORTS_ROOT.iterdir()), [])
             finally:
                 manager.REPORTS_ROOT = original
 
@@ -897,17 +899,45 @@ class PublicConfigurationTests(unittest.TestCase):
             self.assertIsNotNone(installed)
             self.assertEqual(installed.read_text(encoding="utf-8"), expected_css)
 
-    def test_aggregate_report_is_written_in_project_reports_folder(self):
+    def test_aggregate_report_is_one_detailed_flat_report(self):
         with tempfile.TemporaryDirectory() as td:
             original = manager.REPORTS_ROOT
             try:
                 manager.REPORTS_ROOT = Path(td) / "reports"
                 course = manager.COURSES[0]
-                result = manager.ImportResult(course=course, succeeded=True, issue_count=2, unknown_components=2)
+                report_data = {
+                    "stats": {"notes": 12, "assets": 4},
+                    "details": {
+                        "unknown_components": {},
+                        "unresolved_local_links": [
+                            {"note": "01-demo.md", "target": "/missing"}
+                        ],
+                        "warnings": [
+                            {"note": "02-demo.md", "message": "Démo incomplète"}
+                        ],
+                    },
+                }
+                result = manager.ImportResult(
+                    course=course,
+                    succeeded=True,
+                    issue_count=2,
+                    unresolved_links=1,
+                    warnings=1,
+                    report_data=report_data,
+                )
                 md, js = manager.write_aggregate_report([result], Path(td) / "Vault" / "School")
+                self.assertEqual(md, manager.REPORTS_ROOT / "detail-summary.md")
+                self.assertEqual(js, manager.REPORTS_ROOT / "summary.json")
                 self.assertTrue(md.is_file())
                 self.assertTrue(js.is_file())
-                self.assertIn(course.code, md.read_text(encoding="utf-8"))
+                self.assertEqual(sorted(p.name for p in manager.REPORTS_ROOT.iterdir()), ["detail-summary.md", "summary.json"])
+                report_text = md.read_text(encoding="utf-8")
+                self.assertIn(course.code, report_text)
+                self.assertIn("01-demo.md", report_text)
+                self.assertIn("/missing", report_text)
+                self.assertIn("Démo incomplète", report_text)
+                payload = json.loads(js.read_text(encoding="utf-8"))
+                self.assertEqual(payload["courses"][0]["details"]["unresolved_local_links"][0]["target"], "/missing")
             finally:
                 manager.REPORTS_ROOT = original
 

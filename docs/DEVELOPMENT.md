@@ -51,7 +51,9 @@ Lorsqu'un nouveau dépôt officiel est ajouté :
 
 ## Rapports machine-readable
 
-Le moteur écrit `report.md` pour l'humain et `report.json` pour la CLI. Le JSON sert uniquement à agréger proprement les problèmes de plusieurs repos sans parser du Markdown.
+Le moteur écrit encore un `report.md` et un `report.json` lorsqu'il est appelé directement. Le launcher `cem_importer.py run`, lui, envoie ces rapports par cours dans un dossier temporaire, fusionne leur contenu, puis les supprime.
+
+La sortie persistante du launcher est volontairement plate : `reports/detail-summary.md` pour l'humain et `reports/summary.json` pour les outils. Le JSON du moteur inclut les compteurs **et** les détails structurés (composants inconnus, liens non résolus et avertissements), ce qui permet de générer le rapport global sans parser du Markdown.
 
 Les composants inconnus, liens non résolus et avertissements indépendants contribuent au compteur de problèmes de conversion.
 

@@ -2202,6 +2202,17 @@ export default function App() {
                 "unresolved_local_links": unresolved_count,
                 "warnings": warning_count,
             },
+            "details": {
+                "unknown_components": dict(self.report.unknown_components),
+                "unresolved_local_links": [
+                    {"note": note, "target": target}
+                    for note, target in self.report.unresolved_local_links
+                ],
+                "warnings": [
+                    {"note": note, "message": message}
+                    for note, message in independent_warnings
+                ],
+            },
         }
         (report_dir / "report.json").write_text(
             json.dumps(report_json, ensure_ascii=False, indent=2) + "\n",

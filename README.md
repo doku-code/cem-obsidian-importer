@@ -181,9 +181,8 @@ Problèmes de conversion: 2
 
 Problèmes de conversion par repo :
   ⚠ Z03: 2 — 2 composant(s) MDX inconnu(s)
-      .../cem-obsidian-importer/reports/Z03/report.md
 
-📄 Résumé : .../cem-obsidian-importer/reports/summary.md
+📄 Rapport détaillé : .../cem-obsidian-importer/reports/detail-summary.md
 ```
 
 Deux catégories sont distinguées :
@@ -284,29 +283,20 @@ python3 cem_to_obsidian.py --help
 
 # Rapports de conversion
 
-Les rapports sont volontairement gardés **hors du vault** afin que les notes importées restent propres. Ils sont centralisés dans le dossier `reports/` à la racine de l'importeur :
+Les diagnostics sont volontairement gardés **hors du vault** afin que les notes importées restent propres. Le dernier lancement produit seulement deux fichiers plats :
 
 ```text
 cem-obsidian-importer/
 └── reports/
-    ├── summary.md
-    ├── summary.json
-    ├── 3M5/
-    │   ├── report.md
-    │   └── report.json
-    ├── 4W6/
-    │   ├── report.md
-    │   └── report.json
-    └── ...
+    ├── detail-summary.md
+    └── summary.json
 ```
 
-`summary.md` donne une vue globale du dernier lancement, tandis que chaque sous-dossier de cours contient le détail de sa conversion. Le dossier `reports/` est ignoré par Git par défaut.
+`detail-summary.md` est le rapport à lire : il commence par une vue globale, puis sépare clairement les erreurs et avertissements **par cours**, avec le chemin de la note et la cible problématique lorsque cette information est disponible. Les cours sans problème sont regroupés dans une section compacte à la fin.
 
-Un rapport propre indique :
+`summary.json` contient les mêmes données sous forme structurée pour le débogage et une éventuelle automatisation. Les rapports temporaires de chaque cours sont fusionnés pendant l'import puis supprimés automatiquement : il n'y a donc plus de sous-dossiers `reports/3M5/`, `reports/4W6/`, etc.
 
-```text
-Aucun problème de conversion détecté. ✅
-```
+Le dossier `reports/` est ignoré par Git par défaut et est recréé proprement à chaque `run`.
 
 ---
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+
+- remplace l'arborescence de rapports par un seul `reports/detail-summary.md` lisible;
+- conserve `reports/summary.json` comme compagnon machine-readable, désormais enrichi avec les détails de chaque problème;
+- écrit les rapports par cours dans un dossier temporaire puis les fusionne et les supprime automatiquement;
+- recrée `reports/` à chaque lancement pour éliminer les anciens sous-dossiers et rapports obsolètes;
+- organise le rapport détaillé par cours avec vue d'ensemble, liens non résolus, avertissements, composants inconnus et statistiques de conversion.
+
 ## 0.2.5
 
 - convertit les composants Docusaurus `Image` utilisant `img={require(...)}` en images locales Obsidian tout en conservant leur largeur;

@@ -8,7 +8,7 @@ Une bonne issue contient idéalement :
 
 - le dépôt source;
 - le chemin de la page `.md` / `.mdx`;
-- le contenu pertinent du fichier `reports/<code>/report.md`;
+- la section pertinente de `reports/detail-summary.md`;
 - une capture du rendu attendu et du rendu Obsidian, si le problème est visuel.
 
 ## Proposer un changement

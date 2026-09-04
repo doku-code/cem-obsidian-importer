@@ -93,17 +93,13 @@ Sans le plugin, les exemples restent disponibles sous forme de blocs de code / o
 
 À la fin de `run`, la CLI indique le dépôt concerné et le nombre de problèmes détectés.
 
-Ouvrez ensuite le rapport centralisé correspondant :
+Ouvrez ensuite le rapport détaillé unique du dernier lancement :
 
 ```text
-cem-obsidian-importer/reports/<code du cours>/report.md
+cem-obsidian-importer/reports/detail-summary.md
 ```
 
-Le résumé de tous les cours du dernier lancement se trouve dans :
-
-```text
-cem-obsidian-importer/reports/summary.md
-```
+Les cours y sont séparés en sections. Pour chaque problème, le rapport affiche autant que possible la note source, la cible du lien ou le message d'avertissement concerné.
 
 Le rapport détaille notamment :
 
