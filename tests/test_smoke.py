@@ -7,10 +7,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import cem_to_obsidian as module
+import cem_importer as manager
 from cem_to_obsidian import CEMImporter
 
 
-class ImporterV4Tests(unittest.TestCase):
+class ImporterConversionTests(unittest.TestCase):
     @staticmethod
     def converted(importer: CEMImporter, source_note: Path, result: Path) -> str:
         return (result / importer.output_map[source_note.resolve()]).read_text(encoding="utf-8")
@@ -48,6 +49,11 @@ class ImporterV4Tests(unittest.TestCase):
             self.assertIn("> [!info]- Description de la démonstration", converted)
             self.assertIn("_assets", converted)
             self.assertTrue((result / "_assets" / "_conversion" / "report.md").exists())
+            report_json = json.loads(
+                (result / "_assets" / "_conversion" / "report.json").read_text(encoding="utf-8")
+            )
+            self.assertIn("issues", report_json)
+            self.assertEqual(report_json["issues"]["count"], 0)
 
     def test_3m5_layout_and_video(self):
         with tempfile.TemporaryDirectory() as td:
@@ -702,6 +708,58 @@ Texte gauche.
             self.assertIn("/styles.css", data["files"])
             self.assertIn("/App.tsx", data["hiddenFiles"])
             self.assertEqual(importer.report.react_playgrounds, 1)
+
+
+
+class PublicConfigurationTests(unittest.TestCase):
+    def test_default_course_width_is_1400px(self):
+        css = (Path(__file__).resolve().parents[1] / "obsidian-wide-notes.css").read_text(encoding="utf-8")
+        self.assertIn("--file-line-width: 1400px;", css)
+
+    def test_transform_pipeline_is_explicit_and_ordered(self):
+        names = [step.name for step in CEMImporter.TRANSFORM_PIPELINE]
+        self.assertEqual(names[0], "nonvoyant")
+        self.assertIn("react-preview", names)
+        self.assertLess(names.index("react-preview"), names.index("tabs"))
+        self.assertLess(names.index("highlight"), names.index("admonitions"))
+
+    def test_manager_config_round_trip(self):
+        original = manager.CONFIG_PATH
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                manager.CONFIG_PATH = Path(td) / ".cem-importer.json"
+                expected = {"destination": str(Path(td) / "Vault" / "School")}
+                manager.save_config(expected)
+                self.assertEqual(manager.load_config(), expected)
+        finally:
+            manager.CONFIG_PATH = original
+
+    def test_course_catalog_contains_known_cem_repositories(self):
+        repos = {course.repo for course in manager.COURSES}
+        self.assertEqual(len(manager.COURSES), 13)
+        self.assertIn("https://github.com/departement-info-cem/3M5-Intro-Mobile.git", repos)
+        self.assertIn("https://github.com/departement-info-cem/4W6-WebServices.git", repos)
+        self.assertIn("https://github.com/departement-info-cem/z03.git", repos)
+
+    def test_multi_selection_accepts_numbers_ranges_and_commas(self):
+        self.assertEqual(manager._parse_selection("1, 3 5-7", 10), [0, 2, 4, 5, 6])
+
+    def test_sync_css_finds_vault_above_course_destination(self):
+        expected_css = manager.CSS_SOURCE.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault"
+            (vault / ".obsidian").mkdir(parents=True)
+            dest = vault / "School" / "CEM"
+            dest.mkdir(parents=True)
+            installed = manager.sync_css(dest, quiet=True)
+            self.assertIsNotNone(installed)
+            self.assertEqual(installed.read_text(encoding="utf-8"), expected_css)
+
+    def test_public_version_is_semantic(self):
+        self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")
+        version_file = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(module.VERSION, version_file)
+        self.assertEqual(manager.VERSION, version_file)
 
 
 if __name__ == "__main__":

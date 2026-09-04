@@ -1,0 +1,22 @@
+# Local configuration (machine-specific)
+.cem-importer.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/

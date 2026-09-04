@@ -7,6 +7,9 @@ finds the Docusaurus docs tree, converts Markdown/MDX into Obsidian-friendly
 Markdown, and copies referenced local assets under `_assets`.
 
 Python 3.11+, standard library only.
+
+The conversion pipeline is explicit and interactive previews are represented independently
+from the Obsidian renderer so rendering plugins can be replaced without rewriting the parser.
 """
 
 from __future__ import annotations
@@ -27,6 +30,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
+
+VERSION = "0.2.0"
 
 MARKDOWN_EXTS = {".md", ".mdx"}
 CODE_LANG = {
@@ -99,6 +104,38 @@ class SidebarEntry:
     label: str
     doc_id: str
     source_note: Path | None = None
+
+
+@dataclass(frozen=True)
+class TransformStep:
+    """One deterministic step in the MDX -> Obsidian pipeline.
+
+    `needs_context` documents whether the handler needs file/import state from the
+    current note. Keeping the order in one registry makes the transformation graph
+    inspectable and prevents the convert_note method from becoming another wall of
+    ad-hoc calls.
+    """
+
+    name: str
+    method: str
+    needs_context: bool = False
+
+
+@dataclass
+class InteractiveProject:
+    """Plugin-neutral representation of an interactive code example.
+
+    ReactPreview projects render to Code Playground when available and to
+    Codeblock Customizer tabs otherwise. The parser does not need to know which
+    Obsidian plugin ultimately renders the project.
+    """
+
+    template: str
+    entry_file: str
+    files: dict[str, str]
+    source_files: dict[str, Path]
+    hidden_files: set[str] = field(default_factory=set)
+    preview_height: int | None = None
 
 
 class CEMImporter:
@@ -421,12 +458,48 @@ class CEMImporter:
                     index[alias] = note.resolve()
         return index
 
+    TRANSFORM_PIPELINE: tuple[TransformStep, ...] = (
+        TransformStep("nonvoyant", "convert_nonvoyant"),
+        TransformStep("javascript-console", "convert_javascript_console", True),
+        TransformStep("react-preview", "convert_react_preview", True),
+        TransformStep("dataflow", "convert_dataflow", True),
+        TransformStep("ghcode", "convert_ghcode", True),
+        TransformStep("quiz", "convert_quiz", True),
+        TransformStep("docs-viewer", "convert_docs_viewer", True),
+        TransformStep("console-window", "convert_console_window"),
+        TransformStep("github-download", "convert_github_download", True),
+        TransformStep("slides", "convert_slide_components"),
+        TransformStep("examples", "convert_example_components", True),
+        TransformStep("learning-cues", "convert_learning_cues"),
+        TransformStep("project-visuals", "convert_project_visuals"),
+        TransformStep("plan-de-cours", "convert_plan_de_cours_menu"),
+        TransformStep("feedback", "convert_feedback"),
+        TransformStep("video", "convert_video", True),
+        TransformStep("tabs", "convert_tabs"),
+        TransformStep("highlight", "convert_highlight"),
+        TransformStep("admonitions", "convert_admonitions"),
+        TransformStep("layout", "convert_layout_rows"),
+        TransformStep("layout-cleanup", "strip_layout_wrappers"),
+    )
+
+    def apply_transform_pipeline(self, text: str, ctx: NoteContext) -> str:
+        """Apply the ordered component conversion pipeline.
+
+        Handlers remain small deterministic functions, but their ordering now lives in
+        one declarative registry. This makes adding support for new CEM components far
+        less likely to accidentally reorder unrelated transforms.
+        """
+        for step in self.TRANSFORM_PIPELINE:
+            handler = getattr(self, step.method)
+            text = handler(text, ctx) if step.needs_context else handler(text)
+        return text
+
     def run(self) -> Path:
         if self.output_root.exists():
             if not self.force:
                 raise FileExistsError(
                     f"La destination existe déjà: {self.output_root}\n"
-                    "Relance avec --force pour la remplacer."
+                    "Relancez avec --force pour la remplacer."
                 )
             shutil.rmtree(self.output_root)
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -462,27 +535,7 @@ class CEMImporter:
         text = self.remove_import_lines(text)
         text = self.strip_zero_width_markers(text)
         text = self.sanitize_code_fences(text)
-        text = self.convert_nonvoyant(text)
-        text = self.convert_javascript_console(text, ctx)
-        text = self.convert_react_preview(text, ctx)
-        text = self.convert_dataflow(text, ctx)
-        text = self.convert_ghcode(text, ctx)
-        text = self.convert_quiz(text, ctx)
-        text = self.convert_docs_viewer(text, ctx)
-        text = self.convert_console_window(text)
-        text = self.convert_github_download(text, ctx)
-        text = self.convert_slide_components(text)
-        text = self.convert_example_components(text, ctx)
-        text = self.convert_learning_cues(text)
-        text = self.convert_project_visuals(text)
-        text = self.convert_plan_de_cours_menu(text)
-        text = self.convert_feedback(text)
-        text = self.convert_video(text, ctx)
-        text = self.convert_tabs(text)
-        text = self.convert_highlight(text)
-        text = self.convert_admonitions(text)
-        text = self.convert_layout_rows(text)
-        text = self.strip_layout_wrappers(text)
+        text = self.apply_transform_pipeline(text, ctx)
         # Detect leftover MDX *before* generating Obsidian links. Markdown destinations are
         # deliberately wrapped in angle brackets when they contain spaces, e.g.
         # `[Voir](<Librairie Standard.md>)`; scanning after link rewriting would mistake
@@ -687,14 +740,8 @@ class CEMImporter:
 .dark  { background-color: rgb(87, 87, 87); }
 """
 
-    def _react_preview_sources(
-        self, attrs: str, ctx: NoteContext
-    ) -> tuple[str, list[tuple[str, Path, str]], str | None]:
-        """Resolve one CEM ReactPreview into its entry file + visible source files.
-
-        Returns `(entry_file, files, css_var)` where files are `(display_path, source_path, code)`.
-        The original component uses `/page.tsx` unless a static `fileName="..."` is supplied.
-        """
+    def _react_preview_project(self, attrs: str, ctx: NoteContext) -> InteractiveProject | None:
+        """Parse one CEM ReactPreview into a plugin-neutral InteractiveProject."""
         file_name_match = re.search(r'\bfileName=["\']([^"\']+)["\']', attrs)
         entry_file = file_name_match.group(1) if file_name_match else "/page.tsx"
         if not entry_file.startswith("/"):
@@ -705,42 +752,55 @@ class CEMImporter:
         if code:
             requested.append((entry_file, code.group(1)))
 
-        files = re.search(r"\bfiles=\{\{(.*?)\}\}", attrs, re.DOTALL)
-        if files:
+        files_match = re.search(r"\bfiles=\{\{(.*?)\}\}", attrs, re.DOTALL)
+        if files_match:
             for filename, var in re.findall(
-                r'["\']([^"\']+)["\']\s*:\s*([A-Za-z_$][\w$]*)', files.group(1)
+                r'["\']([^"\']+)["\']\s*:\s*([A-Za-z_$][\w$]*)', files_match.group(1)
             ):
                 display = filename if filename.startswith("/") else "/" + filename
                 requested.append((display, var))
 
-        css_var: str | None = None
         css = re.search(r"\bcss=\{([A-Za-z_$][\w$]*)\}", attrs)
         if css:
-            css_var = css.group(1)
-            requested.append(("/globals.css", css_var))
+            requested.append(("/globals.css", css.group(1)))
 
-        resolved: list[tuple[str, Path, str]] = []
+        project_files: dict[str, str] = {}
+        source_files: dict[str, Path] = {}
         for display_name, var in requested:
             source = ctx.raw_imports.get(var)
             if not source or not source.is_file():
                 self.report.warn(ctx.rel_note, f"Source ReactPreview introuvable pour {var}.")
                 continue
             self.copy_source_asset(source, ctx)
-            code_text = source.read_text(encoding="utf-8")
-            resolved.append((display_name, source, code_text))
+            project_files[display_name] = source.read_text(encoding="utf-8")
+            source_files[display_name] = source
             self.report.snippets_inlined += 1
-        return entry_file, resolved, css_var
 
-    def _react_preview_static_tabs(
-        self, ctx: NoteContext, resolved: list[tuple[str, Path, str]]
+        if not project_files:
+            return None
+
+        preview_height_match = re.search(r"\bpreviewHeight=\{?([0-9]+)\}?", attrs)
+        preview_height = int(preview_height_match.group(1)) if preview_height_match else None
+        return InteractiveProject(
+            template="react-ts",
+            entry_file=entry_file,
+            files=project_files,
+            source_files=source_files,
+            preview_height=preview_height,
+        )
+
+    def _render_interactive_project_static(
+        self, ctx: NoteContext, project: InteractiveProject
     ) -> str:
-        """Fallback: all files from one ReactPreview become one Codeblock Customizer group."""
+        """Portable fallback: one Codeblock Customizer group per interactive project."""
         key = ctx.rel_note.as_posix()
         self._react_preview_counter[key] += 1
         group = f"cem-react-{self._react_preview_counter[key]}"
         blocks: list[str] = []
-        for display_name, source, code_text in resolved:
-            lang = CODE_LANG.get(source.suffix.lower(), source.suffix.lstrip(".")) or "text"
+        for display_name, code_text in project.files.items():
+            source = project.source_files.get(display_name)
+            suffix = source.suffix.lower() if source else Path(display_name).suffix.lower()
+            lang = CODE_LANG.get(suffix, suffix.lstrip(".")) or "text"
             fence = "````" if "```" in code_text else "```"
             safe_label = display_name.lstrip("/").replace('"', "'")
             blocks.append(
@@ -748,43 +808,31 @@ class CEMImporter:
             )
         return "\n\n".join(blocks)
 
-    def _react_preview_playground(
-        self,
-        ctx: NoteContext,
-        attrs: str,
-        entry_file: str,
-        resolved: list[tuple[str, Path, str]],
+    def _render_interactive_project_playground(
+        self, ctx: NoteContext, project: InteractiveProject
     ) -> str | None:
-        """Create a Code Playground block + sidecar that mirrors the site's Sandpack ReactPreview.
-
-        This is only used when the destination is inside an Obsidian vault and the Code Playground
-        plugin is installed. Source files stay in the vault; Sandpack compilation itself uses the
-        plugin's configured bundler (CodeSandbox by default, self-hosted if configured by the user).
-        """
+        """Render an InteractiveProject through Code Playground when available."""
         if not self.code_playground_available or self.vault_root is None:
+            return None
+
+        if project.entry_file not in project.files:
             return None
 
         note_key = ctx.rel_note.as_posix()
         self._react_preview_counter[note_key] += 1
         ordinal = self._react_preview_counter[note_key]
         digest = hashlib.sha1(
-            f"{self.course_name}|{note_key}|react-preview|{ordinal}".encode("utf-8")
+            f"{self.course_name}|{note_key}|interactive-project|{ordinal}".encode("utf-8")
         ).hexdigest()[:20]
         block_id = f"cem-{digest}"
 
-        files: dict[str, str] = {display: code for display, _source, code in resolved}
-        if entry_file not in files:
-            # A malformed preview can resolve only auxiliary files. Let the static fallback expose it.
-            return None
-
+        files = dict(project.files)
         has_globals = "/globals.css" in files
-        entry_import = "." + re.sub(r"\.[jt]sx?$", "", entry_file)
+        entry_import = "." + re.sub(r"\.[jt]sx?$", "", project.entry_file)
         imports = [f'import Page from "{entry_import}";', 'import "./styles.css";']
         if has_globals:
             imports.insert(1, 'import "./globals.css";')
 
-        # The original CEM ReactPreview loads Tailwind's browser CDN. Reproduce that behavior
-        # without requiring the note itself to contain any converter commentary.
         app_code = "\n".join(imports) + """
 import { useEffect } from "react";
 
@@ -804,29 +852,27 @@ export default function App() {
         files["/App.tsx"] = app_code
         files["/styles.css"] = self.REACT_PREVIEW_GLOBAL_STYLES
 
+        hidden_files = sorted(project.hidden_files | {"/App.tsx", "/styles.css"})
         playground_dir = self.vault_root / "_playgrounds"
         playground_dir.mkdir(parents=True, exist_ok=True)
         sidecar = {
             "version": 1,
             "files": files,
-            "activeFile": entry_file,
-            "hiddenFiles": ["/App.tsx", "/styles.css"],
+            "activeFile": project.entry_file,
+            "hiddenFiles": hidden_files,
         }
         (playground_dir / f"{block_id}.json").write_text(
             json.dumps(sidecar, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
 
-        # Match the course's normal proportions reasonably well. Code Playground currently exposes
-        # editor-height controls but not the exact SandpackPreview height used by CEM.
-        preview_height = re.search(r"\bpreviewHeight=\{?([0-9]+)\}?", attrs)
         min_editor = 180
         max_editor = 650
-        if preview_height:
-            max_editor = max(420, min(800, int(preview_height.group(1)) * 3))
+        if project.preview_height is not None:
+            max_editor = max(420, min(800, project.preview_height * 3))
 
         config = {
             "id": block_id,
-            "template": "react-ts",
+            "template": project.template,
             "theme": "auto",
             "showEditor": True,
             "showPreview": True,
@@ -839,27 +885,28 @@ export default function App() {
         self.report.react_playgrounds += 1
         return "```code-playground\n" + json.dumps(config, ensure_ascii=False, indent=2) + "\n```"
 
-    def convert_react_preview(self, text: str, ctx: NoteContext) -> str:
-        """Convert CEM ReactPreview.
+    def render_interactive_project(self, ctx: NoteContext, project: InteractiveProject) -> str:
+        """Render through the preferred Obsidian integration with a portable fallback."""
+        playground = self._render_interactive_project_playground(ctx, project)
+        if playground is not None:
+            return playground
+        return self._render_interactive_project_static(ctx, project)
 
-        If Code Playground is installed in the destination vault, recreate the site's live Sandpack
-        editor/preview with local sidecar source files. Otherwise, preserve every file as one
-        Codeblock Customizer tab group. Grouping is based on ReactPreview membership — never on
-        matching filenames — so `/page.tsx` and `/_types/item.ts` correctly belong together.
-        """
+    def convert_react_preview(self, text: str, ctx: NoteContext) -> str:
+        """Convert CEM ReactPreview into a plugin-neutral interactive project first."""
         pattern = re.compile(r"<ReactPreview\b(?P<attrs>.*?)/>", re.DOTALL)
 
         def repl(m: re.Match[str]) -> str:
-            attrs = m.group("attrs")
-            entry_file, resolved, _css_var = self._react_preview_sources(attrs, ctx)
-            if not resolved:
-                self.report.warn(ctx.rel_note, "ReactPreview trouvé, mais aucune source locale n'a pu être extraite.")
-                return self.callout("warning", "Aperçu non converti", "Voir le rapport de conversion.", collapsible=True)
-
-            playground = self._react_preview_playground(ctx, attrs, entry_file, resolved)
-            if playground is not None:
-                return playground
-            return self._react_preview_static_tabs(ctx, resolved)
+            project = self._react_preview_project(m.group("attrs"), ctx)
+            if project is None:
+                self.report.warn(
+                    ctx.rel_note,
+                    "ReactPreview trouvé, mais aucune source locale n'a pu être extraite.",
+                )
+                return self.callout(
+                    "warning", "Aperçu non converti", "Voir le rapport de conversion.", collapsible=True
+                )
+            return self.render_interactive_project(ctx, project)
 
         return pattern.sub(repl, text)
 
@@ -1069,7 +1116,7 @@ export default function App() {
 
             url = f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{file_path}"
             try:
-                req = Request(url, headers={"User-Agent": "cem-to-obsidian/2"})
+                req = Request(url, headers={"User-Agent": f"cem-obsidian-importer/{VERSION}"})
                 with urlopen(req, timeout=20) as response:
                     code = response.read().decode("utf-8")
             except Exception as exc:
@@ -1716,7 +1763,7 @@ export default function App() {
         }
 
         # Never interpret fenced code OR inline code (`useState<T>()`) as MDX components.
-        # This eliminates the false positives seen in the first real-course reports: T,
+        # Ignore generic type identifiers that can otherwise look like MDX tags: T,
         # TKey, Int, String, IActionResult, HTMLInputElement, etc.
         chunks = re.split(r"(```.*?```|`[^`\n]*`)", text, flags=re.DOTALL)
         for i in range(0, len(chunks), 2):
@@ -1961,6 +2008,44 @@ export default function App() {
             lines += ["## Résultat", "", "Aucun problème de conversion détecté. ✅", ""]
         (report_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
+        # Machine-readable companion used by the interactive launcher to build
+        # an aggregate summary when several course repositories are imported.
+        # Warnings generated solely to mirror an unknown-component entry are
+        # excluded from the warning count so the same issue is not counted twice.
+        independent_warnings = [
+            (note, message)
+            for note, message in self.report.warnings
+            if not message.startswith("Composant MDX non reconnu:")
+        ]
+        unknown_occurrences = sum(self.report.unknown_components.values())
+        unresolved_count = len(self.report.unresolved_local_links)
+        warning_count = len(independent_warnings)
+        report_json = {
+            "source": str(self.source),
+            "docs_root": str(self.docs_root.relative_to(self.source)),
+            "stats": {
+                "notes": self.report.notes,
+                "assets": self.report.assets,
+                "snippets_inlined": self.report.snippets_inlined,
+                "dataflows": self.report.dataflows,
+                "videos": self.report.videos,
+                "admonitions": self.report.admonitions,
+                "layout_rows": self.report.layout_rows,
+                "react_playgrounds": self.report.react_playgrounds,
+            },
+            "issues": {
+                "count": unknown_occurrences + unresolved_count + warning_count,
+                "unknown_component_occurrences": unknown_occurrences,
+                "unknown_components": dict(self.report.unknown_components),
+                "unresolved_local_links": unresolved_count,
+                "warnings": warning_count,
+            },
+        }
+        (report_dir / "report.json").write_text(
+            json.dumps(report_json, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
 
 def is_git_url(value: str) -> bool:
     return value.startswith(("https://", "http://", "git@", "ssh://")) or value.endswith(".git")
@@ -1985,6 +2070,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Convertit un repo de cours Docusaurus/MDX du CEM en dossier prêt pour Obsidian."
     )
+    parser.add_argument("--version", action="version", version=f"cem-obsidian-importer {VERSION}")
     parser.add_argument("repo", help="Chemin local du repo OU URL Git à cloner.")
     parser.add_argument("-o", "--output", type=Path, default=Path("obsidian-export"),
                         help="Dossier parent de sortie (défaut: ./obsidian-export).")

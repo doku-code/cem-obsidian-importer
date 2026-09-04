@@ -1,237 +1,299 @@
-# CEM → Obsidian Importer v13
+# CEM Obsidian Importer
 
-Importeur déterministe pour transformer les cours Docusaurus/Markdown/MDX du département d'informatique du CÉM en copie locale agréable à utiliser dans Obsidian.
+Convertit des dépôts de cours Docusaurus / Markdown / MDX du département d'informatique du CÉM en notes locales prêtes pour Obsidian.
 
+Le projet vise un résultat **lisible, local et pratique pour l'étude** : navigation entre les pages, images et assets copiés localement, callouts Obsidian, onglets de code, diagrammes Mermaid et previews interactifs lorsque les plugins requis sont disponibles.
 
+> **Projet communautaire non officiel.** Ce dépôt n'est pas un produit officiel du Cégep Édouard-Montpetit et n'implique aucune approbation de l'établissement ou du département. Le contenu importé conserve les conditions de licence et de diffusion du dépôt source.
 
-- Les marqueurs MDX invisibles `&#8203;` / zero-width space sont retirés du texte converti.
+## Ce que l'importeur fait
 
+- importe un dépôt GitHub directement ou un dépôt déjà cloné sur la machine;
+- détecte automatiquement le dossier Docusaurus `docs`;
+- convertit les pages `.md` et `.mdx` vers du Markdown compatible Obsidian;
+- copie les images, vidéos locales et autres ressources sous `_assets`;
+- conserve l'ordre et les titres du `sidebars.js` lorsqu'il est disponible;
+- génère une page `00 - Navigation.md` et une navigation précédent / suivant;
+- convertit les admonitions Docusaurus en callouts Obsidian;
+- convertit les layouts `Row` / `Column` en colonnes via le CSS fourni;
+- transforme certains `DataFlowPlayer` en Mermaid;
+- transforme les exemples multi-fichiers en playground interactif avec **Code Playground**;
+- utilise **Codeblock Customizer** pour les comparaisons de snippets;
+- produit un rapport de conversion pour signaler les composants inconnus ou les liens non résolus.
 
-## Changements v13 — ReactPreview interactif dans Obsidian
+La conversion est volontairement conservatrice : un composant MDX inconnu n'est pas supprimé silencieusement. Il est signalé dans le rapport d'import.
 
-- Les fichiers d'un même `<ReactPreview>` sont maintenant regroupés **par appartenance au preview**, pas par nom de fichier. Ainsi `/page.tsx` et `/_types/item.ts` deviennent bien les onglets du même exemple.
-- Si le plugin **Code Playground** est installé dans le vault, les `<ReactPreview>` deviennent de vrais playgrounds **Sandpack** avec éditeur, onglets de fichiers et aperçu React directement dans la note.
-- L'importeur détecte automatiquement `.obsidian/plugins/code-playground/manifest.json`; aucun flag supplémentaire n'est nécessaire.
-- Les sources du playground restent locales dans le vault, dans `_playgrounds/<id>.json`. Les identifiants sont déterministes, donc un nouvel import met à jour le même playground au lieu d'en créer un autre.
-- Si Code Playground n'est pas installé, l'importeur retombe proprement sur des onglets **Codeblock Customizer** statiques.
-- Le runtime reproduit le composant CEM avec le template `react-ts`, un `/App.tsx` caché, les fichiers auxiliaires et les styles CEM.
+---
 
-La v13 passe **31 tests de régression**.
+# Installation rapide
 
-## Changements v12 — surlignements fidèles au site
+## 1. Prérequis
 
-- `<Highlight color="tip">` conserve maintenant le vert du site au lieu de devenir jaune;
-- `caution`, `info`, `danger` et `note` conservent également leurs couleurs CEM;
-- les highlights deviennent de petits badges plus épais (padding, arrondi, poids de police);
-- les `==highlights==` Markdown déjà présents reçoivent aussi une forme plus épaisse dans les notes `cem-course`;
-- une couleur inconnue retombe sur `==...==` afin de ne jamais perdre le contenu.
+Il faut :
 
-La v12 passe **28 tests de régression**.
+- **Python 3.11 ou plus récent**;
+- **Git**;
+- **Obsidian**.
 
-## Changements v10 — navigation compacte
+Aucune bibliothèque Python externe n'est requise.
 
-La v10 affine le pied de page de navigation après validation visuelle dans Obsidian :
-
-- seulement **Précédent** et **Suivant** sont affichés comme cartes compactes;
-- **Sommaire** redevient un petit lien discret centré au-dessus des cartes;
-- une page sans précédent/suivant ne crée plus de grosse carte vide;
-- les cartes utilisent uniquement du Markdown + des callouts custom, donc les liens restent de vrais liens Obsidian;
-- les images sont centrées via leur wrapper `.image-embed`, ce qui corrige le cas où centrer uniquement le `<img>` ne suffisait pas;
-- le centrage est ciblé en Reading View et Live Preview;
-- la navigation devient verticale automatiquement sur petite largeur/mobile.
-
-La v10 passe **26 tests de régression**.
-
-## Changements v8 — fidélité visuelle / moins de bruit
-
-La v8 se concentre sur les différences qui restaient visibles entre le site du CÉM et Obsidian :
-
-- suppression des callouts ajoutés uniquement par l'importeur (`Exemple exécutable local`, `Code GitHub copié localement`, `Vidéo du cours`, etc.);
-- `<NonVoyant>` conservé, mais **replié par défaut** comme description secondaire;
-- `JavaScriptConsole files={{...}}` devient maintenant un vrai groupe d'onglets Codeblock Customizer;
-- `GHCode` devient directement un bloc de code local, sans commentaire parasite, et respecte les plages `ignore="x-y"` courantes;
-- YouTube/Vimeo/vidéos locales sont intégrés directement, sans callout intermédiaire;
-- `<Row>/<Column>` est conservé sous forme de **vraies colonnes responsives** grâce au snippet CSS fourni;
-- toutes les notes importées reçoivent `cssclasses: cem-course` afin que le style reste limité aux cours importés;
-- les images des notes importées sont centrées automatiquement;
-- les conversions réussies `DataFlow → Mermaid` n'ajoutent plus de texte explicatif généré.
-
-## Plugins Obsidian recommandés
-
-### Code Playground — recommandé pour les `ReactPreview`
-
-Installe :
-
-```text
-Settings → Community plugins → Browse → Code Playground
-```
-
-Les exemples React du cours deviennent alors de vrais mini-projets exécutables dans la note :
-
-```text
-/page.tsx | /_types/item.ts
----------------------------
-éditeur de code
----------------------------
-aperçu React interactif
-```
-
-Le plugin utilise Sandpack, comme le composant `ReactPreview` du site du CEM. Les fichiers éditables sont stockés localement dans le dossier `_playgrounds` du vault. Par défaut, la compilation utilise le bundler hébergé de CodeSandbox et demande donc Internet. Code Playground permet aussi de configurer une URL de bundler Sandpack auto-hébergée si tu veux plus tard garder cette partie dans ton homelab.
-
-Si Code Playground n'est pas installé, le même ReactPreview reste lisible sous forme d'onglets Codeblock Customizer sans perte de code.
-
-### Codeblock Customizer — recommandé
-
-Installe :
-
-```text
-Settings → Community plugins → Browse → Codeblock Customizer
-```
-
-Les comparaisons de code deviennent des blocs du type :
-
-````md
-```kotlin group:cem-tabs-1 tab:"AndroidView"
-AndroidView(...)
-```
-
-```kotlin group:cem-tabs-1 tab:"factory"
-factory = { ... }
-```
-````
-
-Sans le plugin, le code reste du Markdown normal et lisible. Avec le plugin, les blocs du même groupe deviennent des onglets cliquables. Cette approche reste compatible avec Execute Code.
-
-Les `JavaScriptConsole` multi-fichiers du CEM (par exemple JavaScript vs TypeScript) utilisent maintenant le même principe automatiquement.
-
-### Hide Folders — recommandé
-
-Masque `_assets` pour garder l'arbre propre.
-
-## Snippet CSS à installer / remplacer
-
-Copie :
-
-```text
-obsidian-wide-notes.css
-```
-
-dans :
-
-```text
-TonVault/.obsidian/snippets/
-```
-
-Puis :
-
-```text
-Settings → Appearance → CSS snippets → Reload snippets
-```
-
-et active `obsidian-wide-notes`.
-
-Le snippet fournit maintenant :
-
-- largeur de lecture de `1100px`;
-- images centrées pour les notes `cem-course`;
-- vidéos intégrées propres;
-- rendu responsive des `<Row>/<Column>` en 2 colonnes lorsque l'espace le permet, puis en une colonne sur petit écran.
-
-## Vidéos intégrées
-
-Aucun plugin vidéo n'est nécessaire pour YouTube.
-
-La v8 convertit :
-
-- YouTube / youtu.be / Shorts / embed → lecteur directement dans la note;
-- Vimeo → iframe intégrée;
-- vidéo locale (`.mp4`, `.mov`, `.mkv`, `.webm`, `.ogv`) → copie sous `_assets` + lecteur local;
-- autre URL → lien normal.
-
-## Cours utilisés pour solidifier l'importeur
-
-Première famille réellement importée/testée :
-
-- `departement-info-cem/4W6-WebServices`
-- `departement-info-cem/3M5-Intro-Mobile`
-- `departement-info-cem/3W6-Web-Transactionelle`
-
-Compatibilité ajoutée après inspection des composants des repos suivants :
-
-- `departement-info-cem/1P6`
-- `departement-info-cem/5W5-Web-Avancee`
-- `departement-info-cem/5N6-mobile-2`
-- `departement-info-cem/3s4-cybersec`
-- `departement-info-cem/z03`
-- `departement-info-cem/420-SN1`
-- `departement-info-cem/420-4A4`
-- `departement-info-cem/2P6`
-- `departement-info-cem/4D5-Base-De-Donnees-Et-Prog-Web`
-- `departement-info-cem/3U4-cybersec`
-
-## Conversions prises en charge
-
-- `.mdx` → `.md`;
-- images et assets locaux → `_assets/`;
-- routes Docusaurus → liens locaux;
-- labels/ordre de `sidebars.js` quand disponibles;
-- navigation précédent / sommaire / suivant;
-- admonitions Docusaurus → callouts Obsidian, y compris `:::info[Titre]`;
-- `Row` / `Column` → grille responsive Obsidian;
-- `<center>` + images → images locales centrées par CSS;
-- `Highlight` → surlignage Obsidian `==...==`;
-- `Video` → lecteur intégré quand possible;
-- `Tabs` / `TabItem` de comparaison → onglets Codeblock Customizer;
-- `raw-loader`, `JavaScriptConsole` → snippets locaux;
-- `ReactPreview` → Code Playground interactif si installé, sinon onglets Codeblock Customizer;
-- `DataFlowPlayer` → Mermaid lorsque possible;
-- `GHCode` → code téléchargé, filtré et conservé localement;
-- `Quiz` → quiz statique local avec réponses repliables;
-- `DocsViewer` → sommaire local;
-- `NonVoyant` → description locale repliée par défaut;
-- `ConsoleWindow` → bloc de code/console normal;
-- `GithubDownload` → ressource locale si possible, sinon lien sûr;
-- `SlideImage` → image Markdown;
-- `SlidePage` / sections Reveal → contenu Markdown aplati;
-- `ExampleFrame` / `ExamplePeek` → exemple HTML local + sources disponibles;
-- `TopicBadges` / `KeyPoint` → repères/callouts Obsidian;
-- `ProjectStepHero` / `ProjectJourney` → représentation statique locale;
-- `StyleSwitcher` → supprimé (cosmétique uniquement);
-- `Feedback` → marqueur local non interactif;
-- `PlanDeCoursMenu` → liste locale des PDF trouvés;
-- composants inconnus → avertissement visible + rapport, jamais supprimés silencieusement.
-
-## Importer tes trois cours actuels
+Pour vérifier Python :
 
 ```bash
-./import_my_courses.sh "/chemin/vers/ton/Vault/School/Cégep Édouard-Montpetit"
+python3 --version
 ```
 
-Le helper remplace uniquement `Notes de cours` de :
+Sous Windows, la commande peut plutôt être :
 
-- 3M5 - Programmation Mobile
-- 3W6 - Programmation Web Transactionnelle
-- 4W6 - Programmation Web Orienté Services
+```powershell
+py --version
+```
 
-## Import individuel
+Pour vérifier Git :
+
+```bash
+git --version
+```
+
+## 2. Télécharger le projet
+
+Deux options simples :
+
+### Option A — Git
+
+```bash
+git clone <URL_DU_REPO_CEM_OBSIDIAN_IMPORTER>
+cd cem-obsidian-importer
+```
+
+### Option B — ZIP
+
+Sur GitHub : **Code → Download ZIP**, puis décompressez l’archive. Ouvrez ensuite un terminal dans le dossier extrait.
+
+## 3. Plugins Obsidian recommandés
+
+Les plugins ne sont pas tous obligatoires. Sans eux, l'importeur tente de garder un résultat lisible en Markdown standard.
+
+| Plugin | Utilité |
+|---|---|
+| **Codeblock Customizer** | Onglets pour comparer plusieurs snippets de code |
+| **Code Playground** | Previews React / TypeScript interactifs multi-fichiers |
+| **Hide Folders** | Masquer `_assets` et `_playgrounds` dans l'explorateur Obsidian |
+
+Le CSS fourni est également recommandé pour reproduire certains éléments visuels des cours : largeur des pages, images centrées, colonnes, badges et navigation.
+
+---
+
+# Premier démarrage
+
+> **Important :** `import-all` reconstruit le dossier généré `Notes de cours`. Placez vos annotations personnelles dans un dossier séparé, par exemple `Mes notes`, afin qu’elles ne soient jamais écrasées.
+
+Le moyen le plus simple est d'utiliser `cem_importer.py`.
+
+## 1. Configurer la destination
+
+Depuis le dossier du projet :
+
+```bash
+python3 cem_importer.py configure
+```
+
+Le script demande où placer les cours dans le vault Obsidian.
+
+Exemple :
+
+```text
+/Users/alex/Documents/Obsidian/Vault/School
+```
+
+Sous Windows :
+
+```text
+C:\Users\Alex\Documents\Obsidian\Vault\School
+```
+
+La destination est enregistrée dans `.cem-importer.json`, un fichier local ignoré par Git.
+
+Pour changer la destination plus tard :
+
+```bash
+python3 cem_importer.py configure "/nouvelle/destination"
+```
+
+## 2. Ajouter un cours
+
+```bash
+python3 cem_importer.py add-course \
+  https://github.com/departement-info-cem/3M5-Intro-Mobile.git \
+  "3M5 - Programmation Mobile"
+```
+
+Il est possible d'en ajouter autant que nécessaire.
+
+## 3. Vérifier la configuration
+
+```bash
+python3 cem_importer.py show-config
+```
+
+Pour un diagnostic plus complet :
+
+```bash
+python3 cem_importer.py doctor
+```
+
+## 4. Importer tous les cours configurés
+
+```bash
+python3 cem_importer.py import-all
+```
+
+L'importeur reconstruit les copies locales et synchronise automatiquement le CSS dans le vault lorsqu'une racine `.obsidian` est détectée.
+
+---
+
+# Activer le CSS dans Obsidian
+
+Le fichier `obsidian-wide-notes.css` est copié automatiquement vers :
+
+```text
+.obsidian/snippets/obsidian-wide-notes.css
+```
+
+Il suffit ensuite de l'activer une fois dans Obsidian :
+
+```text
+Settings
+→ Appearance
+→ CSS snippets
+→ Reload snippets
+→ obsidian-wide-notes
+```
+
+La largeur des pages de cours est configurée à **1400 px**.
+
+Pour synchroniser seulement le CSS :
+
+```bash
+python3 cem_importer.py sync-css
+```
+
+---
+
+# Commandes utiles
+
+```text
+python3 cem_importer.py configure
+python3 cem_importer.py show-config
+python3 cem_importer.py add-course <repo> "Nom du dossier"
+python3 cem_importer.py remove-course <numéro-ou-nom>
+python3 cem_importer.py import-all
+python3 cem_importer.py sync-css
+python3 cem_importer.py doctor
+```
+
+Sous Windows, `python3` peut être remplacé par `py` ou `python` selon l'installation.
+
+---
+
+# Importer un seul dépôt sans configuration
+
+Le moteur de conversion peut aussi être utilisé directement :
 
 ```bash
 python3 cem_to_obsidian.py \
   https://github.com/departement-info-cem/4W6-WebServices.git \
-  -o "/chemin/vers/un/dossier" \
+  -o "/chemin/vers/la/sortie" \
   --course-name "Notes de cours" \
   --copy-all-static \
   --force
 ```
 
-## Rapport
+Aide complète :
 
-```text
-Notes de cours/_assets/_conversion/report.md
+```bash
+python3 cem_to_obsidian.py --help
 ```
 
-L'objectif reste : **aucune perte silencieuse**.
+---
 
-## Tests
+# Structure générée
 
-La v13 passe **31 tests de régression**, incluant les anciens comportements ainsi que les ReactPreview multi-fichiers et la génération automatique des sidecars Code Playground.
+Un cours ressemble généralement à ceci :
+
+```text
+3M5 - Programmation Mobile/
+└── Notes de cours/
+    ├── 00 - Navigation.md
+    ├── 01 - Cours/
+    ├── 02 - Recettes/
+    ├── 03 - TP/
+    └── _assets/
+        └── _conversion/
+            └── report.md
+```
+
+Avec Code Playground, un dossier `_playgrounds` peut aussi être créé à la racine du vault pour stocker les projets interactifs multi-fichiers.
+
+Les dossiers techniques peuvent être masqués avec un plugin tel que Hide Folders sans empêcher les notes d'accéder à leur contenu.
+
+---
+
+# Rapport de conversion
+
+Après chaque import, consultez :
+
+```text
+_assets/_conversion/report.md
+```
+
+Un import réussi peut afficher :
+
+```text
+Aucun problème de conversion détecté. ✅
+```
+
+Si un composant MDX n'est pas encore supporté, il sera listé dans ce rapport. Cela permet d'ajouter un nouveau handler sans perdre silencieusement du contenu pédagogique.
+
+---
+
+# Limites importantes
+
+L'objectif est une copie locale utile pour l'étude, pas une reproduction pixel-perfect de Docusaurus.
+
+Quelques éléments peuvent toujours dépendre d'Internet :
+
+- vidéos YouTube / Vimeo;
+- liens vers des ressources externes;
+- previews Code Playground lorsque le bundler Sandpack configuré est distant; selon la configuration du plugin, le code du playground peut être transmis au service de bundling;
+- téléchargement initial des dépôts Git.
+
+Les fichiers du cours, images et snippets présents dans les dépôts peuvent toutefois être copiés localement.
+
+Consultez [docs/SUPPORTED_COMPONENTS.md](docs/SUPPORTED_COMPONENTS.md) pour le détail des conversions prises en charge.
+
+---
+
+# Dépannage
+
+Commencez par :
+
+```bash
+python3 cem_importer.py doctor
+```
+
+Puis consultez [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+---
+
+# Développement
+
+Les détails d'architecture et les commandes de test sont dans [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+Pour exécuter tous les tests :
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Les contributions sont bienvenues; voir [CONTRIBUTING.md](CONTRIBUTING.md).
