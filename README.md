@@ -35,14 +35,14 @@ La dernière destination utilisée est mémorisée localement et proposée comme
 - copie images, vidéos locales et autres ressources sous `_assets`;
 - conserve l'ordre et les titres du `sidebars.js` lorsqu'il est disponible;
 - normalise prudemment les dossiers pédagogiques de premier niveau (`01-notes` → `Cours`, `03-labos` → `Laboratoire`, etc.) sans toucher à la numérotation des notes;
-- génère `00 - Navigation.md` et une navigation précédent / suivant;
+- génère `Navigation.md` avec Iconize, ou `00 - Navigation.md` en fallback autonome, plus une navigation précédent / suivant;
 - convertit les admonitions Docusaurus en callouts Obsidian;
 - convertit les layouts `Row` / `Column` en colonnes via le CSS fourni;
 - transforme certains `DataFlowPlayer` en Mermaid;
 - transforme les `ReactPreview` multi-fichiers en playgrounds interactifs avec **Code Playground**;
 - utilise **Codeblock Customizer** pour les comparaisons de snippets;
 - produit des rapports Markdown/JSON centralisés dans le dossier `reports/` du projet, sans polluer les notes;
-- synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté;
+- synchronise **et active** automatiquement le CSS Obsidian fourni lorsque le vault est détecté;
 - synchronise automatiquement la vraie page Angular des consignes Git du département dans `Git - Consignes du département.md` à la racine du dossier Cégep, avec sa grille de cartes et ses badges adaptés à Obsidian.
 
 La conversion est volontairement conservatrice : un composant MDX inconnu n'est jamais supprimé silencieusement. Il est signalé dans le rapport d'import.
@@ -231,7 +231,7 @@ Par exemple :
 ```text
 4W6 - Programmation Web orientée services/
 └── Classe/
-    ├── 00 - Navigation.md
+    ├── Navigation.md        # avec Iconize; sinon 00 - Navigation.md
     ├── Accueil.md
     ├── Cours/          # source : 01-notes
     ├── TP/             # source : 02-tp
@@ -240,7 +240,7 @@ Par exemple :
 
 420-SN1 - Programmation en sciences/
 └── Classe/
-    ├── 00 - Navigation.md
+    ├── Navigation.md        # si Iconize + frontmatter sont actifs
     ├── Accueil.md
     ├── Cours/
     ├── TP/
@@ -280,136 +280,168 @@ Avec Code Playground, `_playgrounds` peut aussi être créé à la racine du vau
 
 ---
 
-# Iconize — règles recommandées pour les dossiers
+# Iconize — configuration recommandée
 
-Iconize est **optionnel**. L'importeur ne dépend pas de lui pour produire des notes valides.
-La normalisation des noms de dossiers permet toutefois de créer une seule série de règles
-Iconize cohérente pour tous les cours.
+Iconize est **optionnel**. L'importeur continue de produire des notes autonomes s'il n'est
+pas installé. Lorsqu'il est installé, activé et configuré avec **Use icon in frontmatter**,
+l'importeur utilise cependant Iconize pour séparer clairement :
 
-> **Important :** pour chacune des règles ci-dessous, choisissez **Folders only**.
-> Une règle de dossier ne touchera donc jamais une note Markdown portant le même nom.
+- les **dossiers de navigation** : icônes Lucide/SVG via les règles Iconize;
+- les **notes de cours** : emoji via la propriété `icon`;
+- `Accueil` : `LiHouse` (Lucide);
+- `Navigation` : `LiCompass` (Lucide);
+- `Git - Consignes du département` : `LiGitBranch`.
 
-## Règles simples
+Les emojis déjà utilisés par les professeurs dans le titre d'une note sont déplacés dans
+la propriété Iconize et retirés du nom/titre généré. Si une note de la section `Cours` n'a
+aucun emoji, l'importeur utilise `📘` comme icône générique. **Si Iconize ou le frontmatter
+Iconize ne sont pas actifs, rien n'est retiré des titres.**
 
-Si vous acceptez qu'une icône soit appliquée à tout dossier portant ce nom dans le vault,
-les règles peuvent simplement être :
-
-```regex
-^Session [1-6]$
-^Autres cours$
-^Classe$
-^Cours$
-^TP$
-^Laboratoire$
-^Recettes$
-^Aide-mémoire$
-^Solution$
-^Extra$
-^Défis$
-^Informations$
-^Exercices$
-^Archives$
-^Autres$
-^Angular$
-^Python$
-^Colab$
-^NumPy & Keras$
-^Google Cloud$
-^Projet Web$
-^Dans l'autobus$
-```
-
-## Règles recommandées : limitées aux imports CEM
-
-Pour éviter de modifier par accident un autre dossier `Classe`, `Cours` ou `TP` dans le vault,
-activez l'option Iconize qui fait correspondre la règle au **chemin complet** (`Use file path`)
-et utilisez les expressions suivantes. Les chemins internes Obsidian utilisent `/` même sous Windows.
-
-Les lignes ci-dessous sont des regex prêtes à copier. L'indication entre parenthèses est simplement
-une idée de recherche dans le picker Lucide.
+Avec Iconize actif, la navigation générée s'appelle :
 
 ```text
-Sessions (layers / calendar)
+Navigation.md
+```
+
+Sans Iconize, l'importeur conserve le fallback autonome :
+
+```text
+00 - Navigation.md
+```
+
+## Installer les règles sans tout saisir à la main
+
+Le projet fournit les règles dans :
+
+```text
+config/iconize-rules.json
+```
+
+Le plus simple est de **fermer Obsidian**, puis de lancer :
+
+```bash
+python3 cem_importer.py iconize
+```
+
+> Depuis la 0.2.16, `python3 cem_importer.py run` exécute automatiquement cette synchronisation lorsque Iconize est installé et activé. La commande `iconize` reste disponible pour réparer/configurer Iconize sans réimporter les cours. Si Obsidian était ouvert pendant une première synchronisation, rechargez-le une fois pour que le plugin relise ses règles.
+
+Le launcher retrouve le dernier vault utilisé, sauvegarde le `data.json` d'Iconize, puis :
+
+- ajoute les règles CEM manquantes;
+- corrige les règles existantes pour utiliser **Folders only**;
+- active le matching sur le **chemin complet** (`useFilePath: true`);
+- conserve l'icône que vous aviez déjà choisie pour une règle existante.
+
+Une sauvegarde du genre suivant est créée avant toute modification :
+
+```text
+.obsidian/plugins/obsidian-icon-folder/data.json.cem-backup-YYYYMMDD-HHMMSS
+```
+
+Vous pouvez vérifier sans écrire avec :
+
+```bash
+python3 cem_importer.py iconize --dry-run
+```
+
+Puis relancez Obsidian, ou désactivez/réactivez Iconize.
+
+> **Pourquoi les regex peuvent sembler ne rien faire ?**  Les règles ci-dessous portent sur
+> le chemin complet (`.../Session 4/4W6.../Classe/Cours`). Dans l'éditeur d'une règle Iconize,
+> l'option **Include folders and files that are part of the path** doit donc être activée.
+> Sinon Iconize essaie la regex uniquement sur le dernier nom (`Cours`, `TP`, etc.) et elle ne
+> peut pas matcher. Le command `iconize` configure ce point automatiquement.
+
+## Regex utilisées par le projet
+
+Toutes ces règles sont **Folders only** et **Use file path = ON**. Elles correspondent à la
+structure réellement générée par l'importeur :
+
+```text
+Session
 (?:^|/)Session [1-6]$
 
-Autres cours (folder-open)
+Autres cours
 (?:^|/)Autres cours$
 
-Dossier Classe généré (library / folders)
+Classe
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe$
 
-Section Cours (book-open)
+Cours
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Cours$
 
-TP (clipboard-check)
+TP
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/TP$
 
-Laboratoire (flask-conical)
+Laboratoire
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Laboratoire$
 
-Recettes (cooking-pot / notebook-tabs)
+Recettes
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Recettes$
 
-Aide-mémoire (notebook)
+Aide-mémoire
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Aide-mémoire$
 
-Solution (circle-check / eye)
+Solution
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Solution$
 
-Extra (sparkles)
+Extra
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Extra$
 
-Défis (brain / puzzle)
+Défis
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Défis$
 
-Informations (info)
+Informations
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Informations$
 
-Exercices (list-checks)
+Exercices
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Exercices$
 
-Archives (archive)
+Archives
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Archives$
 
-Autres (ellipsis / folder)
+Autres
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Autres$
 
-Angular (braces)
+Angular
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Angular$
 
-Python (terminal / code)
+Python
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Python$
 
-Colab (cloud)
+Colab
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Colab$
 
-NumPy & Keras (network / brain-circuit)
+NumPy & Keras
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/NumPy & Keras$
 
-Google Cloud (cloud-cog)
+Google Cloud
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Google Cloud$
 
-Projet Web (folder-code)
+Projet Web
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Projet Web$
 
-Dans l'autobus (bus)
+Dans l'autobus
 (?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Dans l'autobus$
 ```
 
-L'icône du Cégep utilisée dans les captures du projet est fournie **à titre optionnel** dans :
+Parce que les règles sont `Folders only`, une note Markdown nommée `Cours`, `TP`, `Solution`,
+etc. **n'est jamais affectée** par ces regex.
+
+## Icône du Cégep optionnelle
+
+Le symbole simplifié utilisé pour le dossier du Cégep est fourni dans :
 
 ```text
 assets/iconize/cem-symbol-iconize.svg
 ```
 
-Il s'agit d'une recréation vectorielle simplifiée destinée à un usage d'icône dans un vault
-personnel, et non d'un fichier SVG officiel distribué par le Cégep. Pour l'utiliser, créez un
-custom icon pack dans Iconize puis glissez le SVG sur la ligne du pack. Le SVG utilise
-`currentColor`, donc il suit la couleur choisie par Iconize / le thème.
+Il s'agit d'une recréation vectorielle simplifiée destinée à un vault personnel, et non d'un
+SVG officiel distribué par le Cégep. Créez un custom icon pack dans Iconize puis glissez ce SVG
+sur la ligne du pack. Le fichier utilise `currentColor`, donc il suit la couleur du thème/Iconize.
 
-Iconize ne gère pas l'ordre des dossiers. Après suppression des préfixes `01-`, `02-`, etc.,
-le File Explorer d'Obsidian les trie selon son mode de tri courant. L'importeur n'ajoute pas de
-caractères invisibles ni de faux numéros uniquement pour forcer un ordre visuel.
+Iconize ne gère pas l'ordre des dossiers. L'importeur ne rajoute donc ni caractères invisibles,
+ni faux numéros pour forcer un tri visuel.
 
 ---
 

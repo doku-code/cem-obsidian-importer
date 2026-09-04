@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.16
+
+- `run` synchronise maintenant automatiquement les règles de dossiers Iconize lorsqu'il est installé et activé.
+- `Accueil` et `Navigation` utilisent des icônes Lucide (`LiHouse`, `LiCompass`) au lieu d'emojis; seuls les contenus pédagogiques gardent des emojis colorés.
+- le snippet CSS fourni est maintenant activé automatiquement dans `appearance.json` sans écraser les autres réglages.
+- conserve toujours les icônes personnalisées et écrit un backup avant toute modification Iconize.
+
+## 0.2.15
+
+- ajoute une intégration Iconize réellement consciente du vault : le plugin doit être installé, activé et avoir `Use icon in frontmatter` actif avant que l'importeur retire quoi que ce soit des titres;
+- déplace automatiquement les emojis décoratifs des titres de notes vers la propriété Iconize, avec `📘` comme fallback pour les pages de la section `Cours`, `🏠` pour `Accueil` et `🧭` pour la navigation;
+- renomme `00 - Navigation.md` en `Navigation.md` uniquement lorsque le frontmatter Iconize est disponible; sans Iconize, le fallback autonome reste inchangé;
+- ajoute `config/iconize-rules.json` et la commande `python3 cem_importer.py iconize` pour installer/réparer les règles de dossiers avec `Folders only` et `Use file path`, tout en conservant les icônes déjà choisies par l'utilisateur;
+- sauvegarde automatiquement le `data.json` d'Iconize avant toute modification par la commande de synchronisation;
+- ajoute `LiGitBranch` à la page Git départementale lorsque le frontmatter Iconize est actif et nettoie prudemment l'ancien emplacement généré `Ressources/Git - Consignes du département.md`;
+- ignore les balises `<img>` montrées à l'intérieur des fences de code, du code inline et des commentaires HTML, supprimant les faux avertissements `/images/???.png`, `{{imageUrl}}`, `images/chat.jpg`, etc.;
+- étend `doctor` avec l'état d'Iconize et le nombre de règles CEM correctement configurées;
+- documente le workflow Iconize, les regex exactes et la commande de configuration dans le README;
+- passe à 76 tests de régression.
+
 ## 0.2.14
 
 - renomme le conteneur généré de chaque cours de `Cours` vers `Classe`, afin de distinguer clairement la classe de la section pédagogique `Cours`;

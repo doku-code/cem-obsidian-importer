@@ -61,6 +61,21 @@ CODE_LANG = {
     ".ps1": "powershell",
 }
 
+ICONIZE_PLUGIN_ID = "obsidian-icon-folder"
+GENERIC_COURSE_ICON = "📘"
+HOME_ICON = "LiHouse"
+NAVIGATION_ICON = "LiCompass"
+
+# A deliberately compact emoji matcher used only for document-title decoration.
+# We do not try to be a complete Unicode emoji parser; the CEM titles use ordinary
+# pictographs/dingbats plus the occasional emoji-style arrow.
+_EMOJI_BASE = r"(?:[\U0001F1E6-\U0001FAFF\u2600-\u27BF]|[\u2190-\u21FF]\ufe0f)"
+_EMOJI_CLUSTER_RE = re.compile(
+    _EMOJI_BASE
+    + r"(?:\ufe0f|\ufe0e|[\U0001F3FB-\U0001F3FF])?"
+    + r"(?:\u200d" + _EMOJI_BASE + r"(?:\ufe0f|\ufe0e|[\U0001F3FB-\U0001F3FF])?)*"
+)
+
 RAW_IMPORT_RE = re.compile(
     r"^\s*import\s+(?P<var>[A-Za-z_$][\w$]*)\s+from\s+['\"]!!raw-loader!(?P<path>[^'\"]+)['\"]\s*;?\s*$",
     re.MULTILINE,
@@ -169,6 +184,13 @@ class CEMImporter:
             self.vault_root
             and (self.vault_root / ".obsidian" / "plugins" / "code-playground" / "manifest.json").is_file()
         )
+        (
+            self.iconize_frontmatter_enabled,
+            self.iconize_frontmatter_field,
+        ) = self.detect_iconize_frontmatter(self.vault_root)
+        self.navigation_filename = (
+            "Navigation.md" if self.iconize_frontmatter_enabled else "00 - Navigation.md"
+        )
         self._react_preview_counter: Counter[str] = Counter()
         self.report = Report()
         self._asset_sources: dict[Path, Path] = {}
@@ -194,6 +216,119 @@ class CEMImporter:
             if (candidate / ".obsidian").is_dir():
                 return candidate
         return None
+
+    @staticmethod
+    def detect_iconize_frontmatter(vault_root: Path | None) -> tuple[bool, str]:
+        """Return whether Iconize can safely consume note frontmatter icons.
+
+        We only move emoji out of titles when the plugin is installed *and enabled*
+        and its ``Use icon in frontmatter`` setting is enabled.  That keeps the
+        generated notes self-explanatory for users who do not use Iconize.
+        """
+        if vault_root is None:
+            return False, "icon"
+
+        obsidian = vault_root / ".obsidian"
+        plugin_dir = obsidian / "plugins" / ICONIZE_PLUGIN_ID
+        if not (plugin_dir / "manifest.json").is_file():
+            return False, "icon"
+
+        enabled_file = obsidian / "community-plugins.json"
+        try:
+            enabled = json.loads(enabled_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False, "icon"
+        if not isinstance(enabled, list) or ICONIZE_PLUGIN_ID not in enabled:
+            return False, "icon"
+
+        data_file = plugin_dir / "data.json"
+        try:
+            payload = json.loads(data_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False, "icon"
+        settings = payload.get("settings", {}) if isinstance(payload, dict) else {}
+        if not isinstance(settings, dict) or not settings.get("iconInFrontmatterEnabled", False):
+            return False, "icon"
+        field_name = str(settings.get("iconInFrontmatterFieldName") or "icon").strip() or "icon"
+        return True, field_name
+
+    @staticmethod
+    def extract_title_emoji(title: str) -> str | None:
+        match = _EMOJI_CLUSTER_RE.search(title)
+        return match.group(0) if match else None
+
+    @staticmethod
+    def strip_title_emojis(title: str) -> str:
+        cleaned = _EMOJI_CLUSTER_RE.sub("", title)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s+([,:;!?])", r"\1", cleaned)
+        return cleaned.strip()
+
+    @staticmethod
+    def set_frontmatter_scalar(text: str, key: str, value: str) -> str:
+        """Set one simple YAML frontmatter scalar without requiring PyYAML."""
+        line = f"{key}: {value}"
+        if not text.startswith("---"):
+            return f"---\n{line}\n---\n\n{text.lstrip()}"
+
+        end = text.find("\n---", 3)
+        if end < 0:
+            return text
+        fm = text[3:end]
+        pattern = re.compile(rf"(?m)^{re.escape(key)}\s*:\s*.*$")
+        if pattern.search(fm):
+            fm = pattern.sub(line, fm, count=1)
+        else:
+            fm = fm.rstrip() + "\n" + line + "\n"
+        return "---" + fm + text[end:]
+
+    @classmethod
+    def clean_document_title_in_text(cls, text: str) -> str:
+        """Remove title-decoration emoji from frontmatter title and first H1 only."""
+        if text.startswith("---"):
+            end = text.find("\n---", 3)
+            if end >= 0:
+                fm = text[3:end]
+                pattern = re.compile(r"(?m)^(title\s*:\s*)(.+)$")
+
+                def clean_title_line(match: re.Match[str]) -> str:
+                    raw = match.group(2).strip()
+                    quote = raw[0] if len(raw) >= 2 and raw[0] in "\"'" and raw[-1] == raw[0] else ""
+                    value = raw[1:-1] if quote else raw
+                    value = cls.strip_title_emojis(value)
+                    return match.group(1) + (quote + value + quote if quote else value)
+
+                fm = pattern.sub(clean_title_line, fm, count=1)
+                text = "---" + fm + text[end:]
+
+        h1 = re.compile(r"(?m)^(#\s+)(.+)$")
+        return h1.sub(lambda m: m.group(1) + cls.strip_title_emojis(m.group(2)), text, count=1)
+
+    def note_icon(self, note: Path) -> str | None:
+        rel = note.relative_to(self.docs_root)
+        if note.stem.casefold() == "accueil":
+            return HOME_ICON
+
+        title = self.extract_document_title(note)
+        source_emoji = self.extract_title_emoji(title)
+        if source_emoji:
+            return source_emoji
+
+        if len(rel.parts) > 1 and self.canonical_section_name(rel.parts[0]) == "Cours":
+            return GENERIC_COURSE_ICON
+        return None
+
+    def apply_iconize_note_metadata(self, text: str, note: Path) -> str:
+        if not self.iconize_frontmatter_enabled:
+            return text
+        icon = self.note_icon(note)
+        if not icon:
+            return text
+        text = self.clean_document_title_in_text(text)
+        return self.set_frontmatter_scalar(text, self.iconize_frontmatter_field, icon)
+
+    def navigation_wikilink(self) -> str:
+        return f"[[{Path(self.navigation_filename).stem}]]"
 
     def discover_content_notes(self) -> list[Path]:
         """Return actual course pages, excluding helper/source folders such as `_03-rencontre2.1`.
@@ -486,6 +621,8 @@ class CEMImporter:
 
     def friendly_note_name(self, note: Path) -> str:
         title = self.extract_document_title(note)
+        if self.iconize_frontmatter_enabled:
+            title = self.strip_title_emojis(title)
         order = self.source_order_prefix(note.stem)
         has_sidebar_label = bool(self.sidebar_labels.get(note.resolve(), []))
         if order and not has_sidebar_label:
@@ -696,6 +833,7 @@ class CEMImporter:
         text = self.add_navigation_footer(text, ctx)
         text = self.cleanup_whitespace(text)
         text = self.ensure_course_cssclass(text)
+        text = self.apply_iconize_note_metadata(text, source_note)
 
         output_note.write_text(text, encoding="utf-8")
         self.report.notes += 1
@@ -975,7 +1113,13 @@ class CEMImporter:
                 )
             return f"![{alt}](<{rel_link}>)"
 
-        return pattern.sub(repl, text)
+        # Images shown as literal HTML/JSX examples must remain examples.  This also
+        # prevents placeholder paths such as /images/???.png or {{imageUrl}} from
+        # polluting conversion reports.
+        chunks = re.split(r"(```.*?```|`[^`\n]*`|<!--.*?-->)", text, flags=re.DOTALL)
+        for i in range(0, len(chunks), 2):
+            chunks[i] = pattern.sub(repl, chunks[i])
+        return "".join(chunks)
 
     def convert_nonvoyant(self, text: str) -> str:
         pattern = re.compile(r"<NonVoyant\b[^>]*>(.*?)</NonVoyant>", re.DOTALL | re.IGNORECASE)
@@ -1488,7 +1632,7 @@ export default function App() {
         for child in sorted(self.docs_root.iterdir()):
             if child.is_dir() and not child.name.startswith("_"):
                 folders.append(self.strip_number_prefix(child.name))
-        body = "Le tableau de bord React du site est remplacé par le sommaire local [[00 - Navigation]]."
+        body = f"Le tableau de bord React du site est remplacé par le sommaire local {self.navigation_wikilink()}."
         if folders:
             body += "\n\nSections détectées : " + ", ".join(f"`{f}`" for f in folders) + "."
         replacement = self.callout("info", "Tableau de bord du site simplifié", body)
@@ -1721,7 +1865,7 @@ export default function App() {
         text = hero.sub(hero_repl, text)
         text = re.sub(
             r"<ProjectJourney\b.*?/>",
-            self.callout("info", "Parcours du projet", "Voir [[00 - Navigation]] pour les étapes importées du cours."),
+            self.callout("info", "Parcours du projet", f"Voir {self.navigation_wikilink()} pour les étapes importées du cours."),
             text,
             flags=re.DOTALL,
         )
@@ -2177,7 +2321,10 @@ export default function App() {
             rel_link = os.path.relpath(copied, ctx.output_note.parent).replace(os.sep, "/")
             return f"{m.group('prefix')}{m.group('q')}{rel_link}{anchor}{m.group('q')}"
 
-        return pattern.sub(repl, text)
+        chunks = re.split(r"(```.*?```|`[^`\n]*`|<!--.*?-->)", text, flags=re.DOTALL)
+        for i in range(0, len(chunks), 2):
+            chunks[i] = pattern.sub(repl, chunks[i])
+        return "".join(chunks)
 
     @staticmethod
     def is_external_target(target: str) -> bool:
@@ -2380,7 +2527,7 @@ export default function App() {
         is a quiet text link above them so navigation does not turn into a
         three-card dashboard.
         """
-        home = self.output_root / "00 - Navigation.md"
+        home = self.output_root / self.navigation_filename
         note = ctx.source_note.resolve()
         prev: Path | None = None
         nxt: Path | None = None
@@ -2523,9 +2670,9 @@ export default function App() {
 
     def write_navigation(self) -> None:
         """Create a human-friendly course index based on the real Docusaurus sidebars."""
-        nav = self.output_root / "00 - Navigation.md"
+        nav = self.output_root / self.navigation_filename
         lines = [
-            "# 🧭 Navigation du cours",
+            "# Navigation du cours" if self.iconize_frontmatter_enabled else "# 🧭 Navigation du cours",
             "",
             "> [!info] Copie locale Obsidian",
             "> Cette page est générée à partir de la navigation Docusaurus du cours. Les intitulés et l’ordre suivent le site officiel lorsque `sidebars.js` les fournit.",
@@ -2543,7 +2690,8 @@ export default function App() {
                     continue
                 target = self.output_root / self.output_map[entry.source_note.resolve()]
                 referenced.add(entry.source_note.resolve())
-                lines.append(f"- {self.wikilink_from_root(target, entry.label)}")
+                label = self.strip_title_emojis(entry.label) if self.iconize_frontmatter_enabled else entry.label
+                lines.append(f"- {self.wikilink_from_root(target, label)}")
             lines.append("")
         else:
             lines += ["## Documents", ""]
@@ -2554,10 +2702,19 @@ export default function App() {
             lines += ["## Autres documents", ""]
             for note in extras:
                 target = self.output_root / self.output_map[note.resolve()]
-                lines.append(f"- {self.wikilink_from_root(target, self.extract_document_title(note))}")
+                label = self.extract_document_title(note)
+                if self.iconize_frontmatter_enabled:
+                    label = self.strip_title_emojis(label)
+                lines.append(f"- {self.wikilink_from_root(target, label)}")
             lines.append("")
 
-        nav.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+        rendered = "\n".join(lines).rstrip() + "\n"
+        rendered = self.ensure_course_cssclass(rendered)
+        if self.iconize_frontmatter_enabled:
+            rendered = self.set_frontmatter_scalar(
+                rendered, self.iconize_frontmatter_field, NAVIGATION_ICON
+            )
+        nav.write_text(rendered, encoding="utf-8")
 
     def write_report(self) -> None:
         """Write diagnostics outside the generated notes tree.

@@ -137,3 +137,30 @@ Utilisez plutôt un dossier voisin, par exemple :
 ├── Classe/           ← généré
 └── Mes notes/        ← personnel
 ```
+
+## Les règles Iconize existent mais aucune icône de dossier n'apparaît
+
+Les regex CEM ciblent le **chemin complet** (`Session ... / cours / Classe / Cours`). Dans
+Iconize, une règle créée manuellement doit donc avoir :
+
+- **Include folders and files that are part of the path** activé;
+- **Folders only** comme type d'application.
+
+Le projet peut vérifier/réparer les règles automatiquement. Fermez Obsidian, puis lancez :
+
+```bash
+python3 cem_importer.py iconize
+```
+
+La commande préserve les icônes déjà choisies pour les règles correspondantes et crée une
+sauvegarde de `data.json` avant modification. Utilisez `--dry-run` pour prévisualiser.
+
+## Les emojis restent dans les titres de notes
+
+C'est volontaire si Iconize n'est pas prêt à lire le frontmatter. L'importeur ne retire un
+emoji du titre que si Iconize est installé, activé et que **Use icon in frontmatter** est actif.
+Vérifiez l'état avec :
+
+```bash
+python3 cem_importer.py doctor
+```

@@ -1138,6 +1138,78 @@ Texte gauche.
         self.assertIn("Avant", cleaned)
         self.assertIn("Après", cleaned)
 
+    def test_docusaurus_images_inside_fenced_code_remain_examples_without_warnings(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "repo"
+            docs = root / "web" / "docs" / "01-cours"
+            docs.mkdir(parents=True)
+            note = docs / "01-demo.md"
+            note.write_text(
+                "# Démo\n\n```html\n<img src=\"/images/???.png\" alt=\"???\">\n"
+                "<img src=\"{{imageUrl}}\" alt=\"variable\">\n```\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn('/images/???.png', converted)
+            self.assertIn('{{imageUrl}}', converted)
+            self.assertEqual(importer.report.warnings, [])
+
+    def test_iconize_frontmatter_moves_course_emoji_and_uses_generic_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            vault = base / "Vault"
+            plugin = vault / ".obsidian" / "plugins" / "obsidian-icon-folder"
+            plugin.mkdir(parents=True)
+            (plugin / "manifest.json").write_text('{}', encoding='utf-8')
+            (plugin / "data.json").write_text(json.dumps({
+                "settings": {
+                    "iconInFrontmatterEnabled": True,
+                    "iconInFrontmatterFieldName": "icon",
+                    "rules": []
+                }
+            }), encoding='utf-8')
+            (vault / ".obsidian" / "community-plugins.json").write_text(
+                json.dumps(["obsidian-icon-folder"]), encoding='utf-8'
+            )
+
+            root = base / "repo"
+            docs = root / "web" / "docs" / "01-cours"
+            docs.mkdir(parents=True)
+            with_icon = docs / "01-one.md"
+            with_icon.write_text("---\ntitle: 1.1 - Démo 🏁\n---\n\n# 1.1 - Démo 🏁\n", encoding='utf-8')
+            generic = docs / "02-two.md"
+            generic.write_text("# 1.2 - Sans icône\n", encoding='utf-8')
+
+            importer = CEMImporter(root, vault / "School", course_name="Demo")
+            result = importer.run()
+            first = self.converted(importer, with_icon, result)
+            second = self.converted(importer, generic, result)
+            self.assertIn("icon: 🏁", first)
+            self.assertNotIn("🏁", Path(importer.output_map[with_icon.resolve()]).name)
+            self.assertIn("# 1.1 - Démo", first)
+            self.assertNotIn("# 1.1 - Démo 🏁", first)
+            self.assertIn("icon: 📘", second)
+            self.assertTrue((result / "Navigation.md").is_file())
+            self.assertFalse((result / "00 - Navigation.md").exists())
+            nav = (result / "Navigation.md").read_text(encoding='utf-8')
+            self.assertIn("icon: LiCompass", nav)
+
+    def test_iconize_absent_keeps_title_emoji_and_numbered_navigation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "repo"
+            docs = root / "web" / "docs" / "01-cours"
+            docs.mkdir(parents=True)
+            note = docs / "01-one.md"
+            note.write_text("# 1.1 - Démo 🏁\n", encoding='utf-8')
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("🏁", Path(importer.output_map[note.resolve()]).name)
+            self.assertNotIn("icon: 🏁", converted)
+            self.assertTrue((result / "00 - Navigation.md").is_file())
+
 
 class PublicConfigurationTests(unittest.TestCase):
     def test_default_course_width_is_1400px(self):
@@ -1368,6 +1440,100 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertIn("Avant <code>=</code>", rendered)
         self.assertIn("```text\n`=`\n`==`\n```", rendered)
         self.assertIn("Après <code>$= demo</code>", rendered)
+
+    def test_iconize_rules_file_is_folder_only_and_uses_full_paths(self):
+        rules = manager.load_recommended_iconize_rules()
+        self.assertGreaterEqual(len(rules), 20)
+        self.assertTrue(all(rule.get("for") == "folders" for rule in rules))
+        self.assertTrue(all(rule.get("useFilePath") is True for rule in rules))
+        patterns = {rule["rule"] for rule in rules}
+        self.assertIn("(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Cours$", patterns)
+        self.assertIn("(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Laboratoire$", patterns)
+
+    def test_iconize_rule_sync_repairs_path_mode_and_preserves_user_icon(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault"
+            destination = vault / "School" / "Cégep Édouard-Montpetit"
+            destination.mkdir(parents=True)
+            plugin = vault / ".obsidian" / "plugins" / manager.ICONIZE_PLUGIN_ID
+            plugin.mkdir(parents=True)
+            (plugin / "manifest.json").write_text('{}', encoding='utf-8')
+            (vault / ".obsidian" / "community-plugins.json").write_text(
+                json.dumps([manager.ICONIZE_PLUGIN_ID]), encoding='utf-8'
+            )
+            pattern = "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Cours$"
+            payload = {
+                "settings": {
+                    "iconInFrontmatterEnabled": True,
+                    "iconInFrontmatterFieldName": "icon",
+                    "rules": [
+                        {"rule": pattern, "icon": "LiBookHeart", "for": "everything", "order": 0}
+                    ]
+                }
+            }
+            data = plugin / "data.json"
+            data.write_text(json.dumps(payload), encoding='utf-8')
+            changed, total, backup = manager.sync_iconize_rules(destination)
+            self.assertGreater(changed, 0)
+            self.assertGreaterEqual(total, 20)
+            self.assertIsNotNone(backup)
+            updated = json.loads(data.read_text(encoding='utf-8'))
+            rules = updated["settings"]["rules"]
+            current = next(rule for rule in rules if rule["rule"] == pattern)
+            self.assertEqual(current["icon"], "LiBookHeart")
+            self.assertEqual(current["for"], "folders")
+            self.assertTrue(current["useFilePath"])
+
+    def test_department_git_guide_gets_iconize_frontmatter_and_cleans_legacy_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault"
+            destination = vault / "School" / "Cégep Édouard-Montpetit"
+            legacy = destination / "Ressources"
+            legacy.mkdir(parents=True)
+            (legacy / manager.GIT_GUIDE_FILENAME).write_text("old", encoding='utf-8')
+            plugin = vault / ".obsidian" / "plugins" / manager.ICONIZE_PLUGIN_ID
+            plugin.mkdir(parents=True)
+            (plugin / "manifest.json").write_text('{}', encoding='utf-8')
+            (plugin / "data.json").write_text(json.dumps({
+                "settings": {
+                    "iconInFrontmatterEnabled": True,
+                    "iconInFrontmatterFieldName": "icon",
+                    "rules": []
+                }
+            }), encoding='utf-8')
+            (vault / ".obsidian" / "community-plugins.json").write_text(
+                json.dumps([manager.ICONIZE_PLUGIN_ID]), encoding='utf-8'
+            )
+            target = manager.sync_department_git_guide(
+                destination, quiet=True, fetcher=lambda _url: "<div>Git</div>"
+            )
+            rendered = target.read_text(encoding='utf-8')
+            self.assertIn("icon: LiGitBranch", rendered)
+            self.assertFalse((legacy / manager.GIT_GUIDE_FILENAME).exists())
+            self.assertFalse(legacy.exists())
+
+    def test_sync_css_enables_snippet_without_dropping_existing_appearance(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault"
+            destination = vault / "School" / "Cégep Édouard-Montpetit"
+            destination.mkdir(parents=True)
+            obsidian = vault / ".obsidian"
+            obsidian.mkdir()
+            (obsidian / "appearance.json").write_text(
+                json.dumps({"enabledCssSnippets": ["mine"], "theme": "moonstone"}),
+                encoding="utf-8",
+            )
+            target = manager.sync_css(destination, quiet=True)
+            self.assertTrue(target and target.is_file())
+            appearance = json.loads((obsidian / "appearance.json").read_text(encoding="utf-8"))
+            self.assertIn("mine", appearance["enabledCssSnippets"])
+            self.assertIn(manager.CSS_SOURCE.stem, appearance["enabledCssSnippets"])
+            self.assertEqual(appearance["theme"], "moonstone")
+
+    def test_navigation_and_home_use_lucide_icons_while_course_notes_keep_emoji(self):
+        self.assertEqual(module.HOME_ICON, "LiHouse")
+        self.assertEqual(module.NAVIGATION_ICON, "LiCompass")
+        self.assertEqual(module.GENERIC_COURSE_ICON, "📘")
 
     def test_public_version_is_semantic(self):
         self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")

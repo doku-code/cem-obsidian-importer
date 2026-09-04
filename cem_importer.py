@@ -39,6 +39,9 @@ GIT_GUIDE_RAW_URL = (
     "https://raw.githubusercontent.com/departement-info-cem/"
     "departement-info-cem.github.io/main/angular/src/app/page/git/git.component.html"
 )
+ICONIZE_PLUGIN_ID = "obsidian-icon-folder"
+ICONIZE_RULES_FILE = PROJECT_ROOT / "config" / "iconize-rules.json"
+ICONIZE_GIT_ICON = "LiGitBranch"
 VERSION = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
@@ -87,6 +90,161 @@ class ImportResult:
     warnings: int = 0
     report_data: dict[str, Any] | None = None
     error: str = ""
+
+
+@dataclass(frozen=True)
+class IconizeState:
+    installed: bool
+    enabled: bool
+    frontmatter_enabled: bool
+    frontmatter_field: str
+    data_path: Path | None
+
+
+def iconize_state(vault: Path | None) -> IconizeState:
+    if vault is None:
+        return IconizeState(False, False, False, "icon", None)
+    obsidian = vault / ".obsidian"
+    plugin_dir = obsidian / "plugins" / ICONIZE_PLUGIN_ID
+    data_path = plugin_dir / "data.json"
+    installed = (plugin_dir / "manifest.json").is_file()
+    enabled = False
+    try:
+        plugins = json.loads((obsidian / "community-plugins.json").read_text(encoding="utf-8"))
+        enabled = isinstance(plugins, list) and ICONIZE_PLUGIN_ID in plugins
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    frontmatter_enabled = False
+    frontmatter_field = "icon"
+    if installed and enabled:
+        try:
+            payload = json.loads(data_path.read_text(encoding="utf-8"))
+            settings = payload.get("settings", {}) if isinstance(payload, dict) else {}
+            if isinstance(settings, dict):
+                frontmatter_enabled = bool(settings.get("iconInFrontmatterEnabled", False))
+                frontmatter_field = str(settings.get("iconInFrontmatterFieldName") or "icon").strip() or "icon"
+        except (OSError, json.JSONDecodeError):
+            pass
+    return IconizeState(installed, enabled, frontmatter_enabled, frontmatter_field, data_path if installed else None)
+
+
+def set_frontmatter_scalar(text: str, key: str, value: str) -> str:
+    line = f"{key}: {value}"
+    if not text.startswith("---"):
+        return f"---\n{line}\n---\n\n{text.lstrip()}"
+    end = text.find("\n---", 3)
+    if end < 0:
+        return text
+    fm = text[3:end]
+    pattern = re.compile(rf"(?m)^{re.escape(key)}\s*:\s*.*$")
+    if pattern.search(fm):
+        fm = pattern.sub(line, fm, count=1)
+    else:
+        fm = fm.rstrip() + "\n" + line + "\n"
+    return "---" + fm + text[end:]
+
+
+def load_recommended_iconize_rules() -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(ICONIZE_RULES_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Configuration Iconize invalide: {exc}") from exc
+    rules = payload.get("rules", []) if isinstance(payload, dict) else []
+    if not isinstance(rules, list):
+        raise RuntimeError("Configuration Iconize invalide: tableau `rules` attendu.")
+    return [dict(rule) for rule in rules if isinstance(rule, dict)]
+
+
+def iconize_rule_status(vault: Path | None) -> tuple[int, int]:
+    state = iconize_state(vault)
+    desired = load_recommended_iconize_rules()
+    if not state.data_path or not state.data_path.is_file():
+        return 0, len(desired)
+    try:
+        payload = json.loads(state.data_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0, len(desired)
+    settings = payload.get("settings", {}) if isinstance(payload, dict) else {}
+    existing = settings.get("rules", []) if isinstance(settings, dict) else []
+    by_rule = {r.get("rule"): r for r in existing if isinstance(r, dict)}
+    valid = 0
+    for wanted in desired:
+        current = by_rule.get(wanted.get("rule"))
+        if current and current.get("for") == "folders" and current.get("useFilePath") is True:
+            valid += 1
+    return valid, len(desired)
+
+
+def sync_iconize_rules(destination: Path, *, dry_run: bool = False) -> tuple[int, int, Path | None]:
+    """Merge the CEM folder rules into Iconize without replacing user settings/icons.
+
+    Existing CEM rules keep the icon the user selected; only the important matching
+    semantics are repaired (full path + folders only). Missing rules get the project
+    defaults. A timestamped backup is written before changes.
+    """
+    vault = find_vault_root(destination)
+    state = iconize_state(vault)
+    if not state.installed:
+        raise RuntimeError("Iconize n'est pas installé dans ce vault.")
+    if not state.enabled:
+        raise RuntimeError("Iconize est installé mais n'est pas activé dans ce vault.")
+    if not state.data_path or not state.data_path.is_file():
+        raise RuntimeError("Le fichier data.json d'Iconize est introuvable.")
+
+    try:
+        payload = json.loads(state.data_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"data.json d'Iconize invalide: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("data.json d'Iconize invalide: objet JSON attendu.")
+    settings = payload.setdefault("settings", {})
+    if not isinstance(settings, dict):
+        raise RuntimeError("data.json d'Iconize invalide: `settings` doit être un objet.")
+    existing = settings.setdefault("rules", [])
+    if not isinstance(existing, list):
+        raise RuntimeError("data.json d'Iconize invalide: `settings.rules` doit être un tableau.")
+
+    desired = load_recommended_iconize_rules()
+    existing_by_rule = {r.get("rule"): r for r in existing if isinstance(r, dict)}
+    changed = 0
+    max_order = max((int(r.get("order", -1)) for r in existing if isinstance(r, dict)), default=-1)
+    for wanted in desired:
+        pattern = wanted["rule"]
+        current = existing_by_rule.get(pattern)
+        if current is not None:
+            before = dict(current)
+            current["for"] = "folders"
+            current["useFilePath"] = True
+            if not current.get("icon"):
+                current["icon"] = wanted["icon"]
+            if "order" not in current:
+                max_order += 1
+                current["order"] = max_order
+            if current != before:
+                changed += 1
+            continue
+
+        max_order += 1
+        rule = {
+            "rule": pattern,
+            "icon": wanted["icon"],
+            "for": "folders",
+            "useFilePath": True,
+            "order": max_order,
+        }
+        existing.append(rule)
+        existing_by_rule[pattern] = rule
+        changed += 1
+
+    backup: Path | None = None
+    if changed and not dry_run:
+        from datetime import datetime
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = state.data_path.with_name(f"data.json.cem-backup-{stamp}")
+        shutil.copy2(state.data_path, backup)
+        state.data_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return changed, len(desired), backup
 
 
 def load_config() -> dict[str, Any]:
@@ -151,7 +309,9 @@ def find_vault_root(start: Path) -> Path | None:
     return None
 
 
-def build_department_git_note(source_html: str) -> str:
+def build_department_git_note(
+    source_html: str, *, icon_field: str | None = None
+) -> str:
     """Render the actual department Git page inside Obsidian.
 
     ``/git`` is an Angular page. The old top-level ``git.md`` file in the
@@ -182,7 +342,10 @@ def build_department_git_note(source_html: str) -> str:
         "  - cem-course\n"
         "---\n\n"
     )
-    return frontmatter + '<div class="cem-dept-git">\n' + body + "\n</div>\n"
+    rendered = frontmatter + '<div class="cem-dept-git">\n' + body + "\n</div>\n"
+    if icon_field:
+        rendered = set_frontmatter_scalar(rendered, icon_field, ICONIZE_GIT_ICON)
+    return rendered
 
 
 def sync_department_git_guide(
@@ -211,8 +374,24 @@ def sync_department_git_guide(
         raise RuntimeError("La page Git départementale téléchargée est vide.")
 
     destination.mkdir(parents=True, exist_ok=True)
+    state = iconize_state(find_vault_root(destination))
+    icon_field = state.frontmatter_field if state.frontmatter_enabled else None
     target = destination / GIT_GUIDE_FILENAME
-    target.write_text(build_department_git_note(source), encoding="utf-8")
+    target.write_text(
+        build_department_git_note(source, icon_field=icon_field), encoding="utf-8"
+    )
+
+    # Migration from 0.2.8-0.2.11: the shared Git page used to live alone
+    # under Ressources/. Remove only that generated file, never arbitrary user content.
+    legacy_dir = destination / "Ressources"
+    legacy_note = legacy_dir / GIT_GUIDE_FILENAME
+    if legacy_note.is_file():
+        legacy_note.unlink()
+    if legacy_dir.is_dir():
+        try:
+            legacy_dir.rmdir()
+        except OSError:
+            pass
 
     if not quiet:
         print(f"✓ Guide Git départemental synchronisé : {target}")
@@ -220,6 +399,7 @@ def sync_department_git_guide(
 
 
 def sync_css(destination: Path, *, quiet: bool = False) -> Path | None:
+    """Install the bundled snippet and enable it without disturbing user appearance settings."""
     vault = find_vault_root(destination)
     if vault is None:
         if not quiet:
@@ -229,12 +409,32 @@ def sync_css(destination: Path, *, quiet: bool = False) -> Path | None:
             )
         return None
 
-    snippets = vault / ".obsidian" / "snippets"
+    obsidian = vault / ".obsidian"
+    snippets = obsidian / "snippets"
     snippets.mkdir(parents=True, exist_ok=True)
     target = snippets / CSS_SOURCE.name
     shutil.copy2(CSS_SOURCE, target)
+
+    # Obsidian stores enabled snippets without the .css suffix. Preserve every
+    # unrelated appearance setting and only append ours if needed.
+    appearance_path = obsidian / "appearance.json"
+    try:
+        appearance = json.loads(appearance_path.read_text(encoding="utf-8")) if appearance_path.is_file() else {}
+    except json.JSONDecodeError:
+        appearance = {}
+    if not isinstance(appearance, dict):
+        appearance = {}
+    enabled = appearance.get("enabledCssSnippets", [])
+    if not isinstance(enabled, list):
+        enabled = []
+    snippet_name = CSS_SOURCE.stem
+    if snippet_name not in enabled:
+        enabled.append(snippet_name)
+        appearance["enabledCssSnippets"] = enabled
+        appearance_path.write_text(json.dumps(appearance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     if not quiet:
-        print(f"✓ CSS synchronisé : {target}")
+        print(f"✓ CSS synchronisé et activé : {target}")
     return target
 
 
@@ -637,6 +837,33 @@ def cmd_run(args: argparse.Namespace) -> int:
     vault = find_vault_root(destination)
     if vault:
         print(f"✓ Vault détecté : {vault}")
+        state = iconize_state(vault)
+        if state.enabled:
+            # `run` owns the normal setup path: repair/install the CEM folder
+            # rules before conversion. Existing user-selected icons are preserved.
+            try:
+                changed, total, backup = sync_iconize_rules(destination)
+                if changed:
+                    print(f"✓ Règles de dossiers Iconize synchronisées : {total}/{total}")
+                    if backup:
+                        print(f"  Backup Iconize : {backup}")
+                    print("  ℹ Si Obsidian était ouvert, recharge-le une fois pour rafraîchir les règles.")
+                else:
+                    print(f"✓ Règles de dossiers Iconize : {total}/{total}")
+            except RuntimeError as exc:
+                print(f"⚠ Configuration Iconize non synchronisée : {exc}")
+
+            # Re-read after synchronization so the following status reflects the
+            # actual file on disk. Frontmatter remains opt-in because disabling
+            # it is an explicit user preference.
+            state = iconize_state(vault)
+            if state.frontmatter_enabled:
+                print(f"✓ Iconize actif : icônes de notes via `{state.frontmatter_field}`")
+            else:
+                print(
+                    "⚠ Iconize est actif, mais `Use icon in frontmatter` est désactivé.\n"
+                    "  Les emojis resteront dans les titres pour éviter de perdre l'information visuelle."
+                )
     else:
         print("⚠ Aucun dossier .obsidian détecté au-dessus de la destination.")
     sync_css(destination)
@@ -674,6 +901,26 @@ def cmd_sync_css(args: argparse.Namespace) -> int:
     return 0 if sync_css(destination) else 1
 
 
+def cmd_iconize(args: argparse.Namespace) -> int:
+    config = load_config()
+    destination_raw = args.destination or str(config.get("destination") or "").strip()
+    if not destination_raw:
+        raise RuntimeError("Aucune destination connue. Lance d'abord `python3 cem_importer.py run`.")
+    destination = normalize_destination(destination_raw)
+    changed, total, backup = sync_iconize_rules(destination, dry_run=args.dry_run)
+    if args.dry_run:
+        print(f"Iconize : {changed} règle(s) à ajouter/corriger sur {total}.")
+        return 0
+    if changed == 0:
+        print(f"✓ Iconize : les {total} règles CEM sont déjà correctement configurées.")
+    else:
+        print(f"✓ Iconize : {changed} règle(s) ajoutée(s)/corrigée(s) sur {total}.")
+        if backup:
+            print(f"✓ Sauvegarde : {backup}")
+        print("Relance Obsidian (ou désactive/réactive Iconize) pour recharger data.json.")
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     config = load_config()
     print("Diagnostic CEM Obsidian Importer\n")
@@ -694,9 +941,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"Vault : {vault}")
             code_playground = vault / ".obsidian" / "plugins" / "code-playground" / "manifest.json"
             print(f"Code Playground : {'installé' if code_playground.is_file() else 'non détecté (optionnel)'}")
+            state = iconize_state(vault)
+            print(
+                "Iconize : "
+                + (
+                    f"activé, frontmatter {'activé' if state.frontmatter_enabled else 'désactivé'}"
+                    if state.enabled
+                    else ("installé mais désactivé" if state.installed else "non détecté (optionnel)")
+                )
+            )
+            if state.enabled:
+                valid, total = iconize_rule_status(vault)
+                print(f"Règles Iconize CEM : {valid}/{total} valides")
             snippet = vault / ".obsidian" / "snippets" / CSS_SOURCE.name
             print(f"CSS CEM : {'installé' if snippet.is_file() else 'non installé'}")
-            git_guide = Path(destination_raw).expanduser() / DEPARTMENT_RESOURCES_FOLDER / GIT_GUIDE_FILENAME
+            git_guide = Path(destination_raw).expanduser() / GIT_GUIDE_FILENAME
             print(f"Guide Git départemental : {'installé' if git_guide.is_file() else 'non installé'}")
         else:
             print("  [ATTENTION] Aucun .obsidian trouvé au-dessus de la destination.")
@@ -721,6 +980,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sync-css", help="Resynchroniser le snippet CSS dans le dernier vault utilisé.")
     p.add_argument("--destination", help="Utiliser temporairement une autre destination.")
     p.set_defaults(func=cmd_sync_css)
+
+    p = sub.add_parser("iconize", help="Installer/réparer les règles de dossiers Iconize recommandées.")
+    p.add_argument("--destination", help="Utiliser temporairement une autre destination.")
+    p.add_argument("--dry-run", action="store_true", help="Afficher les changements sans modifier data.json.")
+    p.set_defaults(func=cmd_iconize)
 
     p = sub.add_parser("doctor", help="Vérifier Python, Git, Obsidian et Code Playground.")
     p.set_defaults(func=cmd_doctor)

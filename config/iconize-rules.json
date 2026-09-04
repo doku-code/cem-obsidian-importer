@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "plugin_id": "obsidian-icon-folder",
+  "note": "Canonical CEM folder rules. cem_importer.py iconize merges these into Iconize and preserves icons already chosen for matching rules.",
+  "rules": [
+    {"rule": "(?:^|/)Session [1-6]$", "icon": "LiLayers3", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)Autres cours$", "icon": "LiFolderOpen", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe$", "icon": "LiLibraryBig", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Cours$", "icon": "LiBookOpen", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/TP$", "icon": "LiClipboardCheck", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Laboratoire$", "icon": "LiFlaskConical", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Recettes$", "icon": "LiCookingPot", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Aide-mémoire$", "icon": "LiNotebook", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Solution$", "icon": "LiCircleCheckBig", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Extra$", "icon": "LiSparkles", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Défis$", "icon": "LiPuzzle", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Informations$", "icon": "LiInfo", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Exercices$", "icon": "LiListChecks", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Archives$", "icon": "LiArchive", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Autres$", "icon": "LiEllipsis", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Angular$", "icon": "LiBraces", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Python$", "icon": "LiTerminal", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Colab$", "icon": "LiCloud", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/NumPy & Keras$", "icon": "LiBrainCircuit", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Google Cloud$", "icon": "LiCloudCog", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Projet Web$", "icon": "LiFolderCode", "for": "folders", "useFilePath": true},
+    {"rule": "(?:^|/)(?:Session [1-6]|Autres cours)/[^/]+/Classe/Dans l'autobus$", "icon": "LiBus", "for": "folders", "useFilePath": true}
+  ]
+}
