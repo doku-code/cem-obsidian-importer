@@ -17,8 +17,8 @@ class ImporterConversionTests(unittest.TestCase):
         return (result / importer.output_map[source_note.resolve()]).read_text(encoding="utf-8")
 
     @staticmethod
-    def report(result: Path) -> str:
-        return (result / "_assets" / "_conversion" / "report.md").read_text(encoding="utf-8")
+    def report(importer: CEMImporter) -> str:
+        return (importer.report_dir / "report.md").read_text(encoding="utf-8")
 
     def test_representative_4w6_mdx(self):
         with tempfile.TemporaryDirectory() as td:
@@ -48,9 +48,10 @@ class ImporterConversionTests(unittest.TestCase):
             self.assertIn("```mermaid", converted)
             self.assertIn("> [!info]- Description de la démonstration", converted)
             self.assertIn("_assets", converted)
-            self.assertTrue((result / "_assets" / "_conversion" / "report.md").exists())
+            self.assertTrue((importer.report_dir / "report.md").exists())
+            self.assertFalse((result / "_assets" / "_conversion").exists())
             report_json = json.loads(
-                (result / "_assets" / "_conversion" / "report.json").read_text(encoding="utf-8")
+                (importer.report_dir / "report.json").read_text(encoding="utf-8")
             )
             self.assertIn("issues", report_json)
             self.assertEqual(report_json["issues"]["count"], 0)
@@ -102,7 +103,7 @@ class ImporterConversionTests(unittest.TestCase):
             result = importer.run()
             converted = self.converted(importer, note, result)
             self.assertIn("Composant `MagicThing` non converti", converted)
-            self.assertIn("`MagicThing`", self.report(result))
+            self.assertIn("`MagicThing`", self.report(importer))
 
     def test_docusaurus_routes_follow_renamed_output(self):
         with tempfile.TemporaryDirectory() as td:
@@ -120,7 +121,7 @@ class ImporterConversionTests(unittest.TestCase):
             converted = self.converted(importer, lab, result)
             target_name = importer.output_map[course.resolve()].name
             self.assertIn(target_name, converted)
-            self.assertNotIn("/notes/rencontre1.1", self.report(result))
+            self.assertNotIn("/notes/rencontre1.1", self.report(importer))
 
     def test_generics_are_not_mdx_components(self):
         with tempfile.TemporaryDirectory() as td:
@@ -131,7 +132,7 @@ class ImporterConversionTests(unittest.TestCase):
             note.write_text(r"Use `useState<T>()`, `Array<Int>` et List\<Double\>, Array\<String\>.\n", encoding="utf-8")
             importer = CEMImporter(root, Path(td) / "out")
             result = importer.run()
-            report = self.report(result)
+            report = self.report(importer)
             for name in ("T", "Int", "Double", "String"):
                 self.assertNotIn(f"`{name}`", report)
 
@@ -153,7 +154,7 @@ class ImporterConversionTests(unittest.TestCase):
             converted = self.converted(importer, note, result)
             self.assertIn(importer.output_map[github.resolve()].name, converted)
             self.assertIn(importer.output_map[fork.resolve()].name, converted)
-            self.assertNotIn("Liens locaux non résolus", self.report(result))
+            self.assertNotIn("Liens locaux non résolus", self.report(importer))
 
     def test_ghcode_becomes_local_code(self):
         class FakeResponse:
@@ -711,6 +712,90 @@ Texte gauche.
 
 
 
+    def test_420_sn1_static_mdx_helpers_and_pycode_are_inlined(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs"
+            components = docs / "_components"
+            components.mkdir(parents=True)
+            (components / "PyCode.mdx").write_text(
+                'export const S = ({children}) => <span>{children}</span>;\n'
+                'export const C = ({children}) => <span>{children}</span>;\n',
+                encoding="utf-8",
+            )
+            (components / "AideMemoireListe.mdx").write_text(
+                "import { S, C } from '@site/docs/_components/PyCode.mdx';\n\n"
+                "| Opération | Syntaxe |\n|---|---|\n"
+                '| Créer | <C>heros = [<S>"Mario"</S>]</C> |\n',
+                encoding="utf-8",
+            )
+            note = docs / "x.mdx"
+            note.write_text(
+                "import AideMemoireListe from '@site/docs/_components/AideMemoireListe.mdx';\n"
+                "import { S, C } from '@site/docs/_components/PyCode.mdx';\n\n"
+                "# Démo\n\n<AideMemoireListe />\n\n<C>x = <S>\"allo\"</S></C>\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            report = self.report(importer)
+            self.assertIn("| Opération | Syntaxe |", converted)
+            self.assertIn('`heros = ["Mario"]`', converted)
+            self.assertIn('`x = "allo"`', converted)
+            self.assertNotIn("<AideMemoireListe", converted)
+            self.assertNotIn("<C>", converted)
+            self.assertNotIn("Composants MDX inconnus", report)
+
+    def test_docusaurus_image_require_is_copied_and_preserves_width(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "5N6-mobile-2"
+            docs = root / "web" / "docs" / "03-recettes"
+            assets = docs / "_demo"
+            assets.mkdir(parents=True)
+            (assets / "capture.png").write_bytes(b"fake-png")
+            note = docs / "x.md"
+            note.write_text(
+                '<center>\n<Image alt="Capture" img={require(\'./_demo/capture.png\')} width="300" />\n</center>\n',
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn('<img src="', converted)
+            self.assertIn('alt="Capture"', converted)
+            self.assertIn('width="300"', converted)
+            self.assertIn("capture.png", converted)
+            self.assertNotIn("<Image", converted)
+            report_json = json.loads((importer.report_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report_json["issues"]["unknown_component_occurrences"], 0)
+
+    def test_docusaurus_query_links_resolve_and_inline_code_links_are_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "course"
+            docs = root / "web" / "docs"
+            course_dir = docs / "01-cours"
+            recipe_dir = docs / "03-recettes"
+            course_dir.mkdir(parents=True)
+            recipe_dir.mkdir(parents=True)
+            target = course_dir / "01-rencontre1.mdx"
+            target.write_text("# Rencontre 1\n", encoding="utf-8")
+            note = recipe_dir / "x.mdx"
+            note.write_text(
+                "[Types](/cours/rencontre1?onglet=types)\n\n"
+                "Exemple littéral : `![alt](chemin/vers/image.png)`\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn(importer.output_map[target.resolve()].name, converted)
+            self.assertIn("`![alt](chemin/vers/image.png)`", converted)
+            report_json = json.loads((importer.report_dir / "report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report_json["issues"]["unresolved_local_links"], 0)
+
+
+
 class PublicConfigurationTests(unittest.TestCase):
     def test_default_course_width_is_1400px(self):
         css = (Path(__file__).resolve().parents[1] / "obsidian-wide-notes.css").read_text(encoding="utf-8")
@@ -718,7 +803,9 @@ class PublicConfigurationTests(unittest.TestCase):
 
     def test_transform_pipeline_is_explicit_and_ordered(self):
         names = [step.name for step in CEMImporter.TRANSFORM_PIPELINE]
-        self.assertEqual(names[0], "nonvoyant")
+        self.assertEqual(names[0], "imported-mdx-components")
+        self.assertLess(names.index("imported-mdx-components"), names.index("pycode-components"))
+        self.assertLess(names.index("pycode-components"), names.index("nonvoyant"))
         self.assertIn("react-preview", names)
         self.assertLess(names.index("react-preview"), names.index("tabs"))
         self.assertLess(names.index("highlight"), names.index("admonitions"))
@@ -759,27 +846,45 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertEqual(sessions["5N6"], 6)
         self.assertIsNone(sessions["Z03"])
 
-    def test_report_path_includes_session_folder(self):
+    def test_reports_are_centralized_outside_the_vault(self):
         with tempfile.TemporaryDirectory() as td:
-            destination = Path(td)
-            course = next(course for course in manager.COURSES if course.code == "3M5")
-            path = manager.report_path_for(course, destination)
-            self.assertEqual(
-                path,
-                destination
-                / "Session 4"
-                / "3M5 - Introduction à la programmation mobile"
-                / "Cours"
-                / "_assets"
-                / "_conversion"
-                / "report.json",
-            )
+            original = manager.REPORTS_ROOT
+            try:
+                manager.REPORTS_ROOT = Path(td) / "reports"
+                course = next(course for course in manager.COURSES if course.code == "3M5")
+                self.assertEqual(
+                    manager.report_path_for(course),
+                    manager.REPORTS_ROOT / "3M5" / "report.json",
+                )
+            finally:
+                manager.REPORTS_ROOT = original
 
     def test_launcher_generated_content_folder_is_cours(self):
         self.assertEqual(manager.DEFAULT_NOTES_FOLDER, "Cours")
 
     def test_multi_selection_accepts_numbers_ranges_and_commas(self):
         self.assertEqual(manager._parse_selection("1, 3 5-7", 10), [0, 2, 4, 5, 6])
+
+
+    def test_destination_accepts_shell_quoted_absolute_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault with spaces"
+            (vault / ".obsidian").mkdir(parents=True)
+            destination = vault / "School" / "Cégep Édouard-Montpetit"
+            quoted = f"'{destination}'"
+            normalized = manager.normalize_destination(quoted)
+            self.assertEqual(normalized, destination.resolve())
+            self.assertEqual(manager.find_vault_root(normalized), vault.resolve())
+
+    def test_destination_accepts_shell_escaped_spaces(self):
+        with tempfile.TemporaryDirectory() as td:
+            vault = Path(td) / "Vault with spaces"
+            (vault / ".obsidian").mkdir(parents=True)
+            destination = vault / "School Folder" / "CEM"
+            escaped = str(destination).replace(" ", "\\ ")
+            normalized = manager.normalize_destination(escaped)
+            self.assertEqual(normalized, destination.resolve())
+            self.assertEqual(manager.find_vault_root(normalized), vault.resolve())
 
     def test_sync_css_finds_vault_above_course_destination(self):
         expected_css = manager.CSS_SOURCE.read_text(encoding="utf-8")
@@ -791,6 +896,20 @@ class PublicConfigurationTests(unittest.TestCase):
             installed = manager.sync_css(dest, quiet=True)
             self.assertIsNotNone(installed)
             self.assertEqual(installed.read_text(encoding="utf-8"), expected_css)
+
+    def test_aggregate_report_is_written_in_project_reports_folder(self):
+        with tempfile.TemporaryDirectory() as td:
+            original = manager.REPORTS_ROOT
+            try:
+                manager.REPORTS_ROOT = Path(td) / "reports"
+                course = manager.COURSES[0]
+                result = manager.ImportResult(course=course, succeeded=True, issue_count=2, unknown_components=2)
+                md, js = manager.write_aggregate_report([result], Path(td) / "Vault" / "School")
+                self.assertTrue(md.is_file())
+                self.assertTrue(js.is_file())
+                self.assertIn(course.code, md.read_text(encoding="utf-8"))
+            finally:
+                manager.REPORTS_ROOT = original
 
     def test_public_version_is_semantic(self):
         self.assertRegex(module.VERSION, r"^\d+\.\d+\.\d+$")

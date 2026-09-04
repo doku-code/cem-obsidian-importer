@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.5
+
+- convertit les composants Docusaurus `Image` utilisant `img={require(...)}` en images locales Obsidian tout en conservant leur largeur;
+- prend en charge les fragments MDX statiques réutilisables sous `docs/_components` en les incorporant dans la note générée;
+- simplifie les wrappers de coloration Python `C`, `S`, `N`, `K`, `F` et `B` de 420-SN1 en code Markdown portable;
+- résout les liens Docusaurus contenant des paramètres de sélection d’onglet (`?onglet=...`) vers la bonne note locale;
+- ignore désormais les faux liens Markdown affichés littéralement dans du code inline;
+- ajoute le nombre de types de composants inconnus dans `report.json`;
+- conserve les rapports centralisés sous `reports/`, hors du vault.
+
+## 0.2.4
+
+- déplace tous les rapports de conversion hors du vault Obsidian;
+- centralise les rapports sous `reports/<code>/report.md` et `report.json`;
+- ajoute `reports/summary.md` et `reports/summary.json` pour le dernier lancement;
+- affiche les chemins des rapports centralisés dans le résumé terminal;
+- ignore `reports/` dans Git afin de garder le dépôt propre;
+- conserve l’URL du dépôt source dans les rapports au lieu du chemin temporaire de clonage.
+
+## 0.2.3
+
+- accepte les chemins collés avec guillemets/apostrophes depuis le terminal;
+- accepte aussi les espaces échappés (par ex. `My\ Vault`);
+- corrige la détection du vault Obsidian lorsque la destination est collée au format shell.
+
 Toutes les modifications notables du projet seront documentées ici.
 
 ## 0.2.2
@@ -23,7 +48,7 @@ Toutes les modifications notables du projet seront documentées ici.
 - sélection de plusieurs cours par numéros, plages ou `all`;
 - destination demandée à chaque lancement avec mémorisation de la dernière valeur;
 - résumé final des erreurs d'import et problèmes de conversion regroupés par dépôt;
-- ajout de `_assets/_conversion/report.json` pour l'agrégation automatique des résultats;
+- ajout d’un `report.json` machine-readable par cours pour l’agrégation automatique des résultats;
 - simplification de la configuration locale : plus de liste de dépôts à maintenir manuellement;
 - documentation mise à jour autour du nouveau workflow.
 

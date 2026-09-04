@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = PROJECT_ROOT / ".cem-importer.json"
 ENGINE_PATH = PROJECT_ROOT / "cem_to_obsidian.py"
 CSS_SOURCE = PROJECT_ROOT / "obsidian-wide-notes.css"
+REPORTS_ROOT = PROJECT_ROOT / "reports"
 DEFAULT_NOTES_FOLDER = "Cours"
 VERSION = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
@@ -104,8 +106,31 @@ def save_config(config: dict[str, Any]) -> None:
     )
 
 
+def clean_path_input(value: str) -> str:
+    """Normalize a path pasted from a shell or Finder drag-and-drop.
+
+    Python's ``input()`` does not ask the shell to interpret quotes or escaped
+    spaces. This helper accepts common pasted forms such as ``'/Users/.../My Vault'``
+    and ``/Users/.../My\\ Vault`` while leaving ordinary paths untouched.
+    """
+
+    raw = value.strip()
+    if not raw:
+        return raw
+
+    try:
+        parts = shlex.split(raw)
+    except ValueError:
+        parts = []
+
+    if len(parts) == 1:
+        return parts[0]
+
+    return raw
+
+
 def normalize_destination(value: str) -> Path:
-    path = Path(value).expanduser().resolve()
+    path = Path(clean_path_input(value)).expanduser().resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -223,8 +248,14 @@ def prompt_courses() -> list[Course]:
         print("\nD'accord, choisis à nouveau.")
 
 
-def report_path_for(course: Course, destination: Path) -> Path:
-    return destination / course.session_folder / course.folder / DEFAULT_NOTES_FOLDER / "_assets" / "_conversion" / "report.json"
+def report_dir_for(course: Course) -> Path:
+    """Central report directory for one course, kept outside the Obsidian vault."""
+
+    return REPORTS_ROOT / course.code
+
+
+def report_path_for(course: Course) -> Path:
+    return report_dir_for(course) / "report.json"
 
 
 def read_conversion_summary(path: Path) -> dict[str, int]:
@@ -265,6 +296,10 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
         DEFAULT_NOTES_FOLDER,
         "--copy-all-static",
         "--force",
+        "--report-dir",
+        str(report_dir_for(course)),
+        "--report-source",
+        course.repo,
     ]
 
     print(f"\n{'─' * 72}")
@@ -273,7 +308,7 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
     print(f"{'─' * 72}")
 
     completed = subprocess.run(cmd, text=True)
-    report_path = report_path_for(course, destination)
+    report_path = report_path_for(course)
     if completed.returncode != 0:
         return ImportResult(
             course=course,
@@ -291,6 +326,70 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
     )
 
 
+def write_aggregate_report(results: list[ImportResult], destination: Path) -> tuple[Path, Path]:
+    """Write a compact run summary beside the per-course reports."""
+
+    REPORTS_ROOT.mkdir(parents=True, exist_ok=True)
+    hard_failures = [result for result in results if not result.succeeded]
+    issue_results = [result for result in results if result.succeeded and result.issue_count > 0]
+    total_issues = sum(result.issue_count for result in issue_results)
+
+    payload = {
+        "destination": str(destination),
+        "courses_requested": len(results),
+        "imports_succeeded": len(results) - len(hard_failures),
+        "import_errors": len(hard_failures),
+        "conversion_issues": total_issues,
+        "courses": [
+            {
+                "code": result.course.code,
+                "name": result.course.folder,
+                "repo": result.course.repo,
+                "succeeded": result.succeeded,
+                "issues": result.issue_count,
+                "unknown_components": result.unknown_components,
+                "unresolved_links": result.unresolved_links,
+                "warnings": result.warnings,
+                "report": str(result.report_path.with_suffix(".md")) if result.report_path else None,
+                "error": result.error or None,
+            }
+            for result in results
+        ],
+    }
+    json_path = REPORTS_ROOT / "summary.json"
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    lines = [
+        "# Résumé d'import CEM → Obsidian",
+        "",
+        f"- Destination : `{destination}`",
+        f"- Cours demandés : **{len(results)}**",
+        f"- Imports réussis : **{len(results) - len(hard_failures)}**",
+        f"- Erreurs d'import : **{len(hard_failures)}**",
+        f"- Problèmes de conversion : **{total_issues}**",
+        "",
+        "## Cours",
+        "",
+    ]
+    for result in results:
+        status = "✅" if result.succeeded and result.issue_count == 0 else ("⚠️" if result.succeeded else "❌")
+        lines.append(f"- {status} **{result.course.code}** — {result.course.folder}")
+        if result.succeeded and result.issue_count:
+            lines.append(
+                f"  - {result.issue_count} problème(s): "
+                f"{result.unknown_components} composant(s) inconnu(s), "
+                f"{result.unresolved_links} lien(s), {result.warnings} avertissement(s)"
+            )
+        if result.error:
+            lines.append(f"  - Erreur : {result.error}")
+        if result.report_path:
+            lines.append(f"  - Rapport : `{result.report_path.with_suffix('.md')}`")
+    lines.append("")
+    md_path = REPORTS_ROOT / "summary.md"
+    md_path.write_text("\n".join(lines), encoding="utf-8")
+    return md_path, json_path
+
+
 def print_final_summary(results: list[ImportResult], destination: Path) -> int:
     hard_failures = [result for result in results if not result.succeeded]
     issue_results = [result for result in results if result.succeeded and result.issue_count > 0]
@@ -304,9 +403,12 @@ def print_final_summary(results: list[ImportResult], destination: Path) -> int:
     print(f"Imports réussis        : {len(results) - len(hard_failures)}")
     print(f"Erreurs d'import       : {len(hard_failures)}")
     print(f"Problèmes de conversion: {total_issues}")
+    summary_md, _ = write_aggregate_report(results, destination)
+    print(f"Rapports              : {REPORTS_ROOT}")
 
     if not hard_failures and not issue_results:
         print("\n✓ Aucun problème détecté dans les cours importés.")
+        print(f"📄 Résumé : {summary_md}")
         return 0
 
     if hard_failures:
@@ -330,6 +432,8 @@ def print_final_summary(results: list[ImportResult], destination: Path) -> int:
             print(f"  ⚠ {result.course.code}: {result.issue_count} — {detail_text}")
             if result.report_path:
                 print(f"      {result.report_path.with_suffix('.md')}")
+
+    print(f"\n📄 Résumé : {summary_md}")
 
     # A conversion warning does not make the launcher itself fail. A hard import
     # failure does, which is useful for CI or scripted runs later on.

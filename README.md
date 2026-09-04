@@ -39,7 +39,7 @@ La dernière destination utilisée est mémorisée localement et proposée comme
 - transforme certains `DataFlowPlayer` en Mermaid;
 - transforme les `ReactPreview` multi-fichiers en playgrounds interactifs avec **Code Playground**;
 - utilise **Codeblock Customizer** pour les comparaisons de snippets;
-- produit un rapport Markdown et un rapport JSON pour chaque cours;
+- produit des rapports Markdown/JSON centralisés dans le dossier `reports/` du projet, sans polluer les notes;
 - synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté.
 
 La conversion est volontairement conservatrice : un composant MDX inconnu n'est jamais supprimé silencieusement. Il est signalé dans le rapport d'import.
@@ -84,9 +84,12 @@ Ou utilisez **Code → Download ZIP** sur GitHub, puis ouvrez un terminal dans l
 |---|---|
 | **Codeblock Customizer** | Onglets pour comparer plusieurs snippets de code |
 | **Code Playground** | Previews React / TypeScript interactifs multi-fichiers |
+| **Execute Code** | Exécuter les snippets de code directement dans les notes |
 | **Hide Folders** | Masquer `_assets` et `_playgrounds` dans l'explorateur |
 
 Les plugins restent optionnels. Lorsque c'est possible, l'importeur produit un fallback Markdown lisible.
+
+Pour **Execute Code**, les runtimes du langage doivent être disponibles sur la machine. Par exemple, les snippets JavaScript/TypeScript nécessitent généralement `node` et `ts-node`.
 
 ---
 
@@ -114,7 +117,7 @@ Exemple Windows :
 C:\Users\Alex\Documents\Obsidian\MonVault\School\Cégep Édouard-Montpetit
 ```
 
-Au prochain lancement, cette destination sera proposée entre crochets. Appuyez simplement sur **Entrée** pour la réutiliser ou tapez un nouveau chemin pour la changer.
+Au prochain lancement, cette destination sera proposée entre crochets. Appuyez simplement sur **Entrée** pour la réutiliser ou tapez un nouveau chemin pour la changer. Vous pouvez coller le chemin tel quel, avec des guillemets/apostrophes ou des espaces échappés; le lanceur les normalise automatiquement.
 
 La préférence est stockée dans `.cem-importer.json`, fichier local ignoré par Git.
 
@@ -178,7 +181,9 @@ Problèmes de conversion: 2
 
 Problèmes de conversion par repo :
   ⚠ Z03: 2 — 2 composant(s) MDX inconnu(s)
-      .../_assets/_conversion/report.md
+      .../cem-obsidian-importer/reports/Z03/report.md
+
+📄 Résumé : .../cem-obsidian-importer/reports/summary.md
 ```
 
 Deux catégories sont distinguées :
@@ -279,19 +284,23 @@ python3 cem_to_obsidian.py --help
 
 # Rapports de conversion
 
-Chaque cours produit :
+Les rapports sont volontairement gardés **hors du vault** afin que les notes importées restent propres. Ils sont centralisés dans le dossier `reports/` à la racine de l'importeur :
 
 ```text
-_assets/_conversion/report.md
+cem-obsidian-importer/
+└── reports/
+    ├── summary.md
+    ├── summary.json
+    ├── 3M5/
+    │   ├── report.md
+    │   └── report.json
+    ├── 4W6/
+    │   ├── report.md
+    │   └── report.json
+    └── ...
 ```
 
-pour une lecture humaine, ainsi que :
-
-```text
-_assets/_conversion/report.json
-```
-
-pour le résumé automatique de la CLI.
+`summary.md` donne une vue globale du dernier lancement, tandis que chaque sous-dossier de cours contient le détail de sa conversion. Le dossier `reports/` est ignoré par Git par défaut.
 
 Un rapport propre indique :
 

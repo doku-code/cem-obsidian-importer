@@ -7,6 +7,7 @@ Cette page décrit les principaux éléments reconnus par l'importeur et leur é
 | Markdown standard | Markdown standard |
 | Titres, listes, tableaux | Conservés |
 | Images locales | Copiées sous `_assets` et centrées via CSS |
+| `Image` avec `img={require(...)}` | Image locale copiée sous `_assets`, largeur conservée |
 | `:::note`, `:::tip`, `:::warning`, etc. | Callouts Obsidian |
 | `Row` / `Column` | Mise en page multi-colonnes via CSS |
 | `Tabs` / `TabItem` avec code | Groupe Codeblock Customizer |
@@ -25,6 +26,8 @@ Cette page décrit les principaux éléments reconnus par l'importeur et leur é
 | `SlidePage` / `SlideImage` | Contenu aplati + image locale |
 | `ConsoleWindow` | Bloc de code / console |
 | `PlanDeCoursMenu` | Liens vers les PDF locaux lorsque disponibles |
+| Fragments statiques `docs/_components/*.mdx` | Contenu incorporé dans la note lorsqu’il est importé comme composant |
+| `C`, `S`, `N`, `K`, `F`, `B` (PyCode 420-SN1) | Code inline portable, sans dépendance au CSS du site |
 | Composant inconnu | Signalé dans le rapport de conversion |
 
 ## ReactPreview et Code Playground

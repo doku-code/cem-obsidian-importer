@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import posixpath
@@ -31,7 +32,7 @@ from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 
-VERSION = "0.2.2"
+VERSION = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip()
 
 MARKDOWN_EXTS = {".md", ".mdx"}
 CODE_LANG = {
@@ -67,6 +68,10 @@ DEFAULT_LOCAL_IMPORT_RE = re.compile(
     r"^\s*import\s+(?P<var>[A-Za-z_$][\w$]*)\s+from\s+['\"](?P<path>\.{1,2}/[^'\"]+)['\"]\s*;?\s*$",
     re.MULTILINE,
 )
+MDX_COMPONENT_IMPORT_RE = re.compile(
+    r"^\s*import\s+(?P<var>[A-Za-z_$][\w$]*)\s+from\s+['\"](?P<path>(?:@site/|\.{1,2}/)[^'\"]+\.mdx?)['\"]\s*;?\s*$",
+    re.MULTILINE,
+)
 
 
 @dataclass
@@ -96,6 +101,7 @@ class NoteContext:
     asset_dir: Path
     raw_imports: dict[str, Path]
     local_imports: dict[str, Path]
+    mdx_imports: dict[str, Path]
 
 
 @dataclass
@@ -146,11 +152,15 @@ class CEMImporter:
         course_name: str | None = None,
         force: bool = False,
         copy_all_static: bool = False,
+        report_dir: Path | None = None,
+        report_source: str | None = None,
     ) -> None:
         self.source = source.resolve()
         self.docs_root = self.discover_docs_root(self.source)
         self.course_name = course_name or self.source.name.removesuffix(".git")
         self.output_root = (output_parent / self.course_name).resolve()
+        self.report_dir = (report_dir or (Path.cwd() / "reports" / self.course_name)).expanduser().resolve()
+        self.report_source = report_source or str(self.source)
         self.force = force
         self.copy_all_static = copy_all_static
         self.vault_root = self.discover_vault_root(output_parent.resolve())
@@ -459,6 +469,9 @@ class CEMImporter:
         return index
 
     TRANSFORM_PIPELINE: tuple[TransformStep, ...] = (
+        TransformStep("imported-mdx-components", "convert_imported_mdx_components", True),
+        TransformStep("pycode-components", "convert_pycode_components"),
+        TransformStep("docusaurus-image", "convert_docusaurus_image", True),
         TransformStep("nonvoyant", "convert_nonvoyant"),
         TransformStep("javascript-console", "convert_javascript_console", True),
         TransformStep("react-preview", "convert_react_preview", True),
@@ -521,17 +534,22 @@ class CEMImporter:
         output_note.parent.mkdir(parents=True, exist_ok=True)
         asset_dir = self.output_root / "_assets" / output_rel.with_suffix("")
 
+        source_text = source_note.read_text(encoding="utf-8")
         raw_imports = {
             m.group("var"): self.resolve_import(source_note, m.group("path"))
-            for m in RAW_IMPORT_RE.finditer(source_note.read_text(encoding="utf-8"))
+            for m in RAW_IMPORT_RE.finditer(source_text)
         }
         local_imports = {
             m.group("var"): self.resolve_import(source_note, m.group("path"))
-            for m in DEFAULT_LOCAL_IMPORT_RE.finditer(source_note.read_text(encoding="utf-8"))
+            for m in DEFAULT_LOCAL_IMPORT_RE.finditer(source_text)
         }
-        ctx = NoteContext(source_note, rel, output_note, asset_dir, raw_imports, local_imports)
+        mdx_imports = {
+            m.group("var"): self.resolve_import(source_note, m.group("path"))
+            for m in MDX_COMPONENT_IMPORT_RE.finditer(source_text)
+        }
+        ctx = NoteContext(source_note, rel, output_note, asset_dir, raw_imports, local_imports, mdx_imports)
 
-        text = source_note.read_text(encoding="utf-8")
+        text = source_text
         text = self.remove_import_lines(text)
         text = self.strip_zero_width_markers(text)
         text = self.sanitize_code_fences(text)
@@ -552,7 +570,12 @@ class CEMImporter:
 
     def resolve_import(self, note: Path, raw_path: str) -> Path:
         raw_path = raw_path.strip()
-        candidate = (note.parent / raw_path).resolve()
+        if raw_path.startswith("@site/"):
+            candidate = (self.source / "web" / raw_path[len("@site/"):]).resolve()
+            if not candidate.exists():
+                candidate = (self.source / raw_path[len("@site/"):]).resolve()
+        else:
+            candidate = (note.parent / raw_path).resolve()
         if candidate.exists():
             return candidate
         if not candidate.suffix:
@@ -631,6 +654,130 @@ class CEMImporter:
                 line = line[len(base_indent):]
             out.append(line)
         return "\n".join(out)
+
+    def _load_imported_mdx_fragment(self, path: Path, seen: set[Path] | None = None) -> str:
+        """Load a static MDX helper fragment used as a reusable course component.
+
+        Several CEM repos keep aide-mémoire and reminder blocks under ``docs/_components``
+        and import them as JSX (``<AideMemoireListe />``).  They are course content, not
+        dynamic widgets, so inlining them is both more faithful and less noisy than
+        replacing every occurrence with a warning callout.
+        """
+        resolved = path.resolve()
+        seen = set() if seen is None else set(seen)
+        if resolved in seen or not resolved.is_file():
+            return ""
+        seen.add(resolved)
+
+        text = resolved.read_text(encoding="utf-8")
+        imports = {
+            m.group("var"): self.resolve_import(resolved, m.group("path"))
+            for m in MDX_COMPONENT_IMPORT_RE.finditer(text)
+        }
+        for name, imported in imports.items():
+            if not imported.is_file():
+                continue
+            fragment = self._load_imported_mdx_fragment(imported, seen)
+            if not fragment:
+                continue
+            text = re.sub(
+                rf"<{re.escape(name)}\b[^>]*/>",
+                lambda _m, body=fragment: "\n" + body.strip() + "\n",
+                text,
+                flags=re.DOTALL,
+            )
+
+        text = self.remove_import_lines(text)
+        text = self.strip_zero_width_markers(text)
+        return text.strip()
+
+    def convert_imported_mdx_components(self, text: str, ctx: NoteContext) -> str:
+        """Inline static default-imported ``.md/.mdx`` helper components.
+
+        This intentionally targets content fragments, not arbitrary React components.
+        Dynamic JS/TS components still go through their dedicated handlers and remain
+        reportable when unsupported.
+        """
+        for name, source in ctx.mdx_imports.items():
+            if not source.is_file():
+                continue
+            # Reusable course-content fragments live under underscore component folders.
+            # Avoid accidentally inlining full document pages imported for some other use.
+            if not any(part.startswith("_") and "component" in part.lower() for part in source.parts):
+                continue
+            fragment = self._load_imported_mdx_fragment(source, {ctx.source_note.resolve()})
+            if not fragment:
+                continue
+            text = re.sub(
+                rf"<{re.escape(name)}\b[^>]*/>",
+                lambda _m, body=fragment: "\n" + body.strip() + "\n",
+                text,
+                flags=re.DOTALL,
+            )
+        return text
+
+    @staticmethod
+    def convert_pycode_components(text: str) -> str:
+        """Flatten the 420-SN1 PyCode colour wrappers into portable Markdown code.
+
+        ``S/N/K/F/B`` only colour tokens on the Docusaurus site.  Their text content is
+        retained, while ``C`` becomes an inline-code span so the examples still read as
+        code in Obsidian without depending on site-specific CSS variables.
+        """
+        chunks = re.split(r"(```.*?```|`[^`\n]*`)", text, flags=re.DOTALL)
+        for i in range(0, len(chunks), 2):
+            chunk = chunks[i]
+            for tag in ("S", "N", "K", "F", "B"):
+                chunk = re.sub(rf"</?{tag}\b[^>]*>", "", chunk)
+
+            def code_repl(match: re.Match[str]) -> str:
+                body = match.group("body").strip()
+                if "\n" in body:
+                    return body
+                ticks = "``" if "`" in body else "`"
+                return f"{ticks}{body}{ticks}"
+
+            chunk = re.sub(
+                r"<C\b[^>]*>(?P<body>.*?)</C>",
+                code_repl,
+                chunk,
+                flags=re.DOTALL,
+            )
+            chunks[i] = chunk
+        return "".join(chunks)
+
+    def convert_docusaurus_image(self, text: str, ctx: NoteContext) -> str:
+        """Convert Docusaurus ``<Image img={require(...)} />`` to a local Obsidian image."""
+        pattern = re.compile(r"<Image\b(?P<attrs>.*?)/>", re.DOTALL)
+
+        def repl(match: re.Match[str]) -> str:
+            attrs = match.group("attrs")
+            alt = self.parse_jsx_string_attr(attrs, "alt") or ""
+            width = self.parse_jsx_string_attr(attrs, "width")
+            required = re.search(
+                r"\bimg\s*=\s*\{\s*require\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\}",
+                attrs,
+                flags=re.DOTALL,
+            )
+            src = required.group(1) if required else self.parse_jsx_string_attr(attrs, "src")
+            if not src:
+                return match.group(0)
+
+            resolved = self.resolve_local_reference(ctx.source_note, src)
+            if not resolved or not resolved.is_file():
+                self.report.warn(ctx.rel_note, f"Image Docusaurus introuvable: {src}")
+                return match.group(0)
+
+            copied = self.copy_asset(resolved, ctx)
+            rel_link = os.path.relpath(copied, ctx.output_note.parent).replace(os.sep, "/")
+            if width and re.fullmatch(r"\d+(?:\.\d+)?", width):
+                return (
+                    f'<img src="{html.escape(rel_link, quote=True)}" '
+                    f'alt="{html.escape(alt, quote=True)}" width="{width}">'
+                )
+            return f"![{alt}](<{rel_link}>)"
+
+        return pattern.sub(repl, text)
 
     def convert_nonvoyant(self, text: str) -> str:
         pattern = re.compile(r"<NonVoyant\b[^>]*>(.*?)</NonVoyant>", re.DOTALL | re.IGNORECASE)
@@ -1620,7 +1767,11 @@ export default function App() {
             self.report.unresolved_local_links.append((str(ctx.rel_note), raw_target))
             return m.group(0)
 
-        return pattern.sub(repl, text)
+        # Do not rewrite examples shown literally inside fenced or inline code.
+        chunks = re.split(r"(```.*?```|`[^`\n]*`)", text, flags=re.DOTALL)
+        for i in range(0, len(chunks), 2):
+            chunks[i] = pattern.sub(repl, chunks[i])
+        return "".join(chunks)
 
     def rewrite_html_sources(self, text: str, ctx: NoteContext) -> str:
         pattern = re.compile(r'(?P<prefix>\b(?:src|href)=)(?P<q>["\'])(?P<target>[^"\']+)(?P=q)', re.IGNORECASE)
@@ -1647,12 +1798,16 @@ export default function App() {
 
     @staticmethod
     def split_anchor(target: str) -> tuple[str, str]:
-        # Docusaurus links may contain anchors. Query strings are preserved as unresolved to avoid bad local mapping.
+        """Return the local path and Markdown anchor, ignoring Docusaurus UI query state.
+
+        Course links frequently use query strings only to select a Docusaurus tab
+        (``?onglet=...``). Obsidian cannot reproduce that UI state, but it can still link
+        to the correct local note, so resolve the path while dropping the query.
+        """
         target = target.strip().strip("<>")
-        if "#" in target:
-            p, a = target.split("#", 1)
-            return unquote(p), "#" + a
-        return unquote(target), ""
+        parsed = urlparse(target)
+        anchor = f"#{parsed.fragment}" if parsed.fragment else ""
+        return unquote(parsed.path), anchor
 
     def resolve_local_reference(self, note: Path, target: str) -> Path | None:
         if not target:
@@ -1968,12 +2123,18 @@ export default function App() {
         nav.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
     def write_report(self) -> None:
-        report_dir = self.output_root / "_assets" / "_conversion"
+        """Write diagnostics outside the generated notes tree.
+
+        Reports are development artifacts, not course content.  Keeping them in a
+        separate directory leaves the Obsidian vault clean while preserving all
+        information needed to improve the converter.
+        """
+        report_dir = self.report_dir
         report_dir.mkdir(parents=True, exist_ok=True)
         lines = [
             "# Rapport d'import CEM → Obsidian",
             "",
-            f"- Source locale : `{self.source}`",
+            f"- Source : `{self.report_source}`",
             f"- Dossier docs détecté : `{self.docs_root.relative_to(self.source)}`",
             f"- Notes converties : **{self.report.notes}**",
             f"- Assets copiés : **{self.report.assets}**",
@@ -2036,6 +2197,7 @@ export default function App() {
             "issues": {
                 "count": unknown_occurrences + unresolved_count + warning_count,
                 "unknown_component_occurrences": unknown_occurrences,
+                "unknown_component_types": len(self.report.unknown_components),
                 "unknown_components": dict(self.report.unknown_components),
                 "unresolved_local_links": unresolved_count,
                 "warnings": warning_count,
@@ -2079,6 +2241,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true", help="Remplace la sortie existante.")
     parser.add_argument("--copy-all-static", action="store_true",
                         help="Copie aussi tout web/static ou static sous _assets/_static.")
+    parser.add_argument("--report-dir", type=Path,
+                        help="Dossier où écrire report.md/report.json (hors des notes).")
+    parser.add_argument("--report-source",
+                        help="Libellé de source à afficher dans le rapport (ex. URL du repo).")
     return parser
 
 
@@ -2101,10 +2267,12 @@ def main(argv: list[str] | None = None) -> int:
             course_name=args.course_name or inferred_name,
             force=args.force,
             copy_all_static=args.copy_all_static,
+            report_dir=args.report_dir,
+            report_source=args.report_source,
         )
         result = importer.run()
         print(f"✅ Import terminé: {result}")
-        print(f"📄 Rapport: {result / '_assets' / '_conversion' / 'report.md'}")
+        print(f"📄 Rapport: {importer.report_dir / 'report.md'}")
         return 0
     except Exception as exc:
         print(f"❌ {exc}", file=sys.stderr)

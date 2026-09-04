@@ -20,3 +20,6 @@ Desktop.ini
 # Editors
 .vscode/
 .idea/
+
+# Generated conversion diagnostics
+/reports/
