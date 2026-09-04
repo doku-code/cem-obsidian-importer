@@ -1715,6 +1715,45 @@ export default function App() {
         remaining = (body[:m.start()] + body[m.end():]).strip()
         return lang, code, remaining
 
+    @staticmethod
+    def normalize_tab_indentation(text: str) -> str:
+        """Dedent a mixed TabItem without letting already-normalized fences pin it at column zero.
+
+        ``sanitize_code_fences`` runs before component conversion so Docusaurus metadata such
+        as ``showLineNumbers`` is removed while preserving Codeblock Customizer metadata we
+        generate later.  That means a source fence nested eight spaces inside a TabItem may
+        already be at column zero when the tab is converted.  A normal common-indent pass then
+        sees zero and leaves all surrounding prose indented, which Obsidian renders as one giant
+        code block.  Compute the common indent from prose only and leave fenced regions untouched.
+        """
+        lines = text.expandtabs(4).splitlines()
+        in_fence = False
+        prose_indents: list[int] = []
+        for line in lines:
+            if re.match(r"^[ \t]*`{3,}", line):
+                in_fence = not in_fence
+                continue
+            if not in_fence and line.strip():
+                prose_indents.append(len(line) - len(line.lstrip()))
+
+        amount = min(prose_indents) if prose_indents else 0
+        if amount <= 0:
+            return "\n".join(lines)
+
+        out: list[str] = []
+        in_fence = False
+        for line in lines:
+            if re.match(r"^[ \t]*`{3,}", line):
+                in_fence = not in_fence
+                out.append(line)
+                continue
+            if not in_fence and line.strip():
+                leading = len(line) - len(line.lstrip())
+                cut = min(amount, leading)
+                line = line[cut:]
+            out.append(line)
+        return "\n".join(out)
+
     def convert_tabs(self, text: str) -> str:
         """Convert Docusaurus Tabs.
 
@@ -1737,14 +1776,14 @@ export default function App() {
             parsed: list[tuple[str, str, str, str]] = []
             for item in items:
                 label = self._tab_label(item.group("attrs"))
-                body = self.normalize_indentation(item.group("body")).strip()
+                body = self.normalize_tab_indentation(item.group("body")).strip()
                 extracted = self._extract_single_code_fence(body)
                 if extracted is None:
                     # Safe fallback for mixed/nested tabs.
                     pieces = []
                     for fallback in items:
                         shown = self._tab_label(fallback.group("attrs"))
-                        pieces.append(f"#### {shown}\n\n{self.normalize_indentation(fallback.group('body')).strip()}")
+                        pieces.append(f"#### {shown}\n\n{self.normalize_tab_indentation(fallback.group('body')).strip()}")
                         self.report.tabs += 1
                     return "\n\n".join(pieces)
                 lang, code, remaining = extracted

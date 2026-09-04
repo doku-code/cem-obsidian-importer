@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10
+
+- empêche le vrai composant Angular de la page Git départementale d'être interprété comme un bloc de code indenté dans Obsidian en normalisant son HTML à la colonne zéro;
+- corrige l'ordre des transformations des fences de code et des `Tabs`, afin que les onglets mixtes de 420-SN1 soient déduits comme un bloc cohérent avant de normaliser les fences;
+- ajoute des tests de régression reproduisant les deux rendus cassés observés dans Obsidian.
+
 ## 0.2.9
 
 - remplace la mauvaise source legacy `git.md` par le vrai composant Angular utilisé par `https://info.cegepmontpetit.ca/git`;

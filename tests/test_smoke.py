@@ -911,6 +911,41 @@ Texte gauche.
             self.assertIn("copier.png", converted)
             self.assertEqual(sum(importer.report.unknown_components.values()), 0)
 
+    def test_420_sn1_indented_mixed_tab_with_code_fence_dedents_as_a_unit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "420-SN1"
+            docs = root / "web" / "docs" / "01-cours"
+            docs.mkdir(parents=True)
+            note = docs / "01-rencontre1.mdx"
+            note.write_text(
+                "<Tabs>\n"
+                "    <TabItem value=\"intro\" label=\"Intro\">\n\n"
+                "        ### Exemple\n\n"
+                "        - Copiez le code :\n"
+                "            ```python\n"
+                "            nombre1 = 30\n"
+                "            print(nombre1)\n"
+                "            ```\n"
+                "            - Puis sauvegardez le fichier.\n\n"
+                "        ### Environnements de développement (IDE)\n\n"
+                "        Ce paragraphe doit rester du texte normal.\n\n"
+                "        ```python\n"
+                "        print(\"fin\")\n"
+                "        ```\n"
+                "    </TabItem>\n"
+                "</Tabs>\n",
+                encoding="utf-8",
+            )
+            importer = CEMImporter(root, Path(td) / "out")
+            result = importer.run()
+            converted = self.converted(importer, note, result)
+            self.assertIn("#### Intro", converted)
+            self.assertIn("```python\nnombre1 = 30\nprint(nombre1)\n```", converted)
+            self.assertIn("### Environnements de développement (IDE)", converted)
+            self.assertIn("Ce paragraphe doit rester du texte normal.", converted)
+            self.assertNotIn("        ### Environnements", converted)
+            self.assertNotIn("        Ce paragraphe", converted)
+
     def test_empty_mermaid_fence_is_removed(self):
         cleaned = CEMImporter.cleanup_whitespace("Avant\n\n```mermaid\n\n```\n\nAprès\n")
         self.assertNotIn("```mermaid", cleaned)
@@ -1102,6 +1137,27 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertIn("BUGFIX", rendered)
         self.assertNotIn("```mermaid", rendered)
         self.assertNotIn("<script", rendered.lower())
+
+    def test_department_git_html_is_flush_left_so_obsidian_does_not_make_code_blocks(self):
+        source = (
+            '<div class="container">\n'
+            '  <div class="row">\n'
+            '    <div class="col-md alert">\n'
+            '      <h4>Exemple de commit</h4>\n'
+            '      <div class="alert alert-success">\n'
+            '        <strong>titre :</strong> FCT sauvegarde\n'
+            '      </div>\n'
+            '    </div>\n'
+            '  </div>\n'
+            '</div>'
+        )
+        rendered = manager.build_department_git_note(source)
+        body = rendered.split('---\n\n', 1)[1]
+        for line in body.splitlines():
+            if line.strip():
+                self.assertEqual(line, line.lstrip())
+        self.assertIn('<div class="alert alert-success">', rendered)
+        self.assertNotIn('    <div class="alert alert-success">', rendered)
 
     def test_department_git_css_recreates_card_grid(self):
         css = (Path(__file__).resolve().parents[1] / "obsidian-wide-notes.css").read_text(encoding="utf-8")

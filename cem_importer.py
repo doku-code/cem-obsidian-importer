@@ -166,6 +166,12 @@ def build_department_git_note(source_html: str) -> str:
     """
 
     body = source_html.lstrip("\ufeff").strip()
+    # Obsidian's Markdown parser can reinterpret nested HTML lines indented by
+    # four spaces as an indented code block once a blank line terminates a raw
+    # HTML block. The Angular template is heavily indented, so normalize every
+    # non-empty line to column zero. HTML collapses these newlines to spaces in
+    # text nodes, while the Bootstrap-like classes remain available to our CSS.
+    body = "\n".join(line.strip() for line in body.splitlines() if line.strip())
     # The URL is fixed to the official CEM repository, but do not persist
     # executable tags if upstream ever introduces them unexpectedly.
     body = re.sub(r"<script\b.*?</script>", "", body, flags=re.IGNORECASE | re.DOTALL)
