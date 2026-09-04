@@ -31,7 +31,7 @@ from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 
-VERSION = "0.2.0"
+VERSION = "0.2.2"
 
 MARKDOWN_EXTS = {".md", ".mdx"}
 CODE_LANG = {

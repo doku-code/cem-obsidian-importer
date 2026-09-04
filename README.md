@@ -1,33 +1,54 @@
 # CEM Obsidian Importer
 
-Convertit des dépôts de cours Docusaurus / Markdown / MDX du département d'informatique du CÉM en notes locales prêtes pour Obsidian.
+Convertit les dépôts de cours Docusaurus / Markdown / MDX du département d'informatique du CÉM en notes locales prêtes pour Obsidian.
 
-Le projet vise un résultat **lisible, local et pratique pour l'étude** : navigation entre les pages, images et assets copiés localement, callouts Obsidian, onglets de code, diagrammes Mermaid et previews interactifs lorsque les plugins requis sont disponibles.
+Le projet vise un résultat **lisible, local et pratique pour l'étude** : navigation entre les pages, assets copiés localement, callouts Obsidian, onglets de code, diagrammes Mermaid et previews interactifs lorsque les plugins requis sont disponibles.
 
-> **Projet communautaire non officiel.** Ce dépôt n'est pas un produit officiel du Cégep Édouard-Montpetit et n'implique aucune approbation de l'établissement ou du département. Le contenu importé conserve les conditions de licence et de diffusion du dépôt source.
+> **Projet communautaire non officiel.** Ce dépôt n'est pas un produit officiel du Cégep Édouard-Montpetit et n'implique aucune approbation de l'établissement ou du département. Le contenu importé conserve les conditions de licence et de diffusion de son dépôt source.
 
-## Ce que l'importeur fait
+## En bref
 
-- importe un dépôt GitHub directement ou un dépôt déjà cloné sur la machine;
-- détecte automatiquement le dossier Docusaurus `docs`;
-- convertit les pages `.md` et `.mdx` vers du Markdown compatible Obsidian;
-- copie les images, vidéos locales et autres ressources sous `_assets`;
-- conserve l'ordre et les titres du `sidebars.js` lorsqu'il est disponible;
-- génère une page `00 - Navigation.md` et une navigation précédent / suivant;
-- convertit les admonitions Docusaurus en callouts Obsidian;
-- convertit les layouts `Row` / `Column` en colonnes via le CSS fourni;
-- transforme certains `DataFlowPlayer` en Mermaid;
-- transforme les exemples multi-fichiers en playground interactif avec **Code Playground**;
-- utilise **Codeblock Customizer** pour les comparaisons de snippets;
-- produit un rapport de conversion pour signaler les composants inconnus ou les liens non résolus.
+Pour un usage normal, il n'y a qu'une commande à retenir :
 
-La conversion est volontairement conservatrice : un composant MDX inconnu n'est pas supprimé silencieusement. Il est signalé dans le rapport d'import.
+```bash
+python3 cem_importer.py run
+```
+
+Le programme :
+
+1. demande dans quel dossier du vault placer les cours;
+2. affiche la liste des dépôts CEM connus;
+3. permet d'en sélectionner un ou plusieurs;
+4. importe les cours choisis;
+5. affiche un résumé avec les erreurs d'import et les problèmes de conversion, regroupés par dépôt.
+
+La dernière destination utilisée est mémorisée localement et proposée comme valeur par défaut au prochain lancement.
 
 ---
 
-# Installation rapide
+# Fonctionnalités
 
-## 1. Prérequis
+- clone automatiquement les dépôts GitHub officiels connus;
+- détecte le dossier Docusaurus `docs`;
+- convertit les pages `.md` et `.mdx` vers du Markdown compatible Obsidian;
+- copie images, vidéos locales et autres ressources sous `_assets`;
+- conserve l'ordre et les titres du `sidebars.js` lorsqu'il est disponible;
+- génère `00 - Navigation.md` et une navigation précédent / suivant;
+- convertit les admonitions Docusaurus en callouts Obsidian;
+- convertit les layouts `Row` / `Column` en colonnes via le CSS fourni;
+- transforme certains `DataFlowPlayer` en Mermaid;
+- transforme les `ReactPreview` multi-fichiers en playgrounds interactifs avec **Code Playground**;
+- utilise **Codeblock Customizer** pour les comparaisons de snippets;
+- produit un rapport Markdown et un rapport JSON pour chaque cours;
+- synchronise automatiquement le CSS Obsidian fourni lorsque le vault est détecté.
+
+La conversion est volontairement conservatrice : un composant MDX inconnu n'est jamais supprimé silencieusement. Il est signalé dans le rapport d'import.
+
+---
+
+# Installation
+
+## Prérequis
 
 Il faut :
 
@@ -37,130 +58,182 @@ Il faut :
 
 Aucune bibliothèque Python externe n'est requise.
 
-Pour vérifier Python :
+Vérification rapide :
 
 ```bash
 python3 --version
-```
-
-Sous Windows, la commande peut plutôt être :
-
-```powershell
-py --version
-```
-
-Pour vérifier Git :
-
-```bash
 git --version
 ```
 
-## 2. Télécharger le projet
+Sous Windows, `python3` peut être remplacé par `py` ou `python` selon l'installation.
 
-Deux options simples :
+## Récupérer le projet
 
-### Option A — Git
+Avec Git :
 
 ```bash
 git clone <URL_DU_REPO_CEM_OBSIDIAN_IMPORTER>
 cd cem-obsidian-importer
 ```
 
-### Option B — ZIP
+Ou utilisez **Code → Download ZIP** sur GitHub, puis ouvrez un terminal dans le dossier extrait.
 
-Sur GitHub : **Code → Download ZIP**, puis décompressez l’archive. Ouvrez ensuite un terminal dans le dossier extrait.
-
-## 3. Plugins Obsidian recommandés
-
-Les plugins ne sont pas tous obligatoires. Sans eux, l'importeur tente de garder un résultat lisible en Markdown standard.
+## Plugins Obsidian recommandés
 
 | Plugin | Utilité |
 |---|---|
 | **Codeblock Customizer** | Onglets pour comparer plusieurs snippets de code |
 | **Code Playground** | Previews React / TypeScript interactifs multi-fichiers |
-| **Hide Folders** | Masquer `_assets` et `_playgrounds` dans l'explorateur Obsidian |
+| **Hide Folders** | Masquer `_assets` et `_playgrounds` dans l'explorateur |
 
-Le CSS fourni est également recommandé pour reproduire certains éléments visuels des cours : largeur des pages, images centrées, colonnes, badges et navigation.
-
----
-
-# Premier démarrage
-
-> **Important :** `import-all` reconstruit le dossier généré `Notes de cours`. Placez vos annotations personnelles dans un dossier séparé, par exemple `Mes notes`, afin qu’elles ne soient jamais écrasées.
-
-Le moyen le plus simple est d'utiliser `cem_importer.py`.
-
-## 1. Configurer la destination
-
-Depuis le dossier du projet :
-
-```bash
-python3 cem_importer.py configure
-```
-
-Le script demande où placer les cours dans le vault Obsidian.
-
-Exemple :
-
-```text
-/Users/alex/Documents/Obsidian/Vault/School
-```
-
-Sous Windows :
-
-```text
-C:\Users\Alex\Documents\Obsidian\Vault\School
-```
-
-La destination est enregistrée dans `.cem-importer.json`, un fichier local ignoré par Git.
-
-Pour changer la destination plus tard :
-
-```bash
-python3 cem_importer.py configure "/nouvelle/destination"
-```
-
-## 2. Ajouter un cours
-
-```bash
-python3 cem_importer.py add-course \
-  https://github.com/departement-info-cem/3M5-Intro-Mobile.git \
-  "3M5 - Programmation Mobile"
-```
-
-Il est possible d'en ajouter autant que nécessaire.
-
-## 3. Vérifier la configuration
-
-```bash
-python3 cem_importer.py show-config
-```
-
-Pour un diagnostic plus complet :
-
-```bash
-python3 cem_importer.py doctor
-```
-
-## 4. Importer tous les cours configurés
-
-```bash
-python3 cem_importer.py import-all
-```
-
-L'importeur reconstruit les copies locales et synchronise automatiquement le CSS dans le vault lorsqu'une racine `.obsidian` est détectée.
+Les plugins restent optionnels. Lorsque c'est possible, l'importeur produit un fallback Markdown lisible.
 
 ---
 
-# Activer le CSS dans Obsidian
+# Utilisation
 
-Le fichier `obsidian-wide-notes.css` est copié automatiquement vers :
+Lancez :
+
+```bash
+python3 cem_importer.py run
+```
+
+## 1. Choisir la destination
+
+Le programme demande d'abord où créer les dossiers de cours.
+
+Exemple macOS / Linux :
+
+```text
+/Users/alex/Documents/Obsidian/MonVault/School/Cégep Édouard-Montpetit
+```
+
+Exemple Windows :
+
+```text
+C:\Users\Alex\Documents\Obsidian\MonVault\School\Cégep Édouard-Montpetit
+```
+
+Au prochain lancement, cette destination sera proposée entre crochets. Appuyez simplement sur **Entrée** pour la réutiliser ou tapez un nouveau chemin pour la changer.
+
+La préférence est stockée dans `.cem-importer.json`, fichier local ignoré par Git.
+
+## 2. Sélectionner les cours
+
+Le programme affiche ensuite les cours regroupés par session :
+
+```text
+Cours disponibles
+
+Session 1
+  [ ]  1. 1P6 - Introduction à la programmation
+
+Session 2
+  [ ]  2. 2P6 - Programmation orientée objet
+
+Session 3
+  [ ]  3. 3W6 - Programmation Web transactionnelle
+  ...
+
+Session 4
+  [ ]  7. 3M5 - Introduction à la programmation mobile
+  [ ]  8. 4W6 - Programmation Web orientée services
+  ...
+```
+
+Plusieurs formats sont acceptés :
+
+```text
+3 8 10
+```
+
+```text
+3-6
+```
+
+```text
+1,3,5-8
+```
+
+ou simplement :
+
+```text
+all
+```
+
+Le programme réaffiche la sélection avant de commencer l'import.
+
+## 3. Lire le résumé
+
+À la fin, un résumé global est affiché :
+
+```text
+RÉSUMÉ DE L'IMPORT
+========================================================================
+Destination            : ...
+Cours demandés         : 3
+Imports réussis        : 3
+Erreurs d'import       : 0
+Problèmes de conversion: 2
+
+Problèmes de conversion par repo :
+  ⚠ Z03: 2 — 2 composant(s) MDX inconnu(s)
+      .../_assets/_conversion/report.md
+```
+
+Deux catégories sont distinguées :
+
+- **Erreur d'import** : le dépôt n'a pas pu être cloné ou le convertisseur a échoué.
+- **Problème de conversion** : l'import s'est terminé, mais certains éléments demandent une vérification, par exemple un composant MDX inconnu ou un lien local non résolu.
+
+---
+
+# Structure générée
+
+Les cours sont automatiquement rangés par session. Une destination comme
+`School/Cégep Édouard-Montpetit` peut donc produire :
+
+```text
+Cégep Édouard-Montpetit/
+├── Session 1/
+│   └── 1P6 - Introduction à la programmation/
+│       └── Cours/
+├── Session 3/
+│   └── 3W6 - Programmation Web transactionnelle/
+│       └── Cours/
+├── Session 4/
+│   ├── 3M5 - Introduction à la programmation mobile/
+│   │   └── Cours/
+│   └── 4W6 - Programmation Web orientée services/
+│       └── Cours/
+└── Session 6/
+    └── 5N6 - Applications mobiles avancées/
+        └── Cours/
+```
+
+À l'intérieur de chaque dossier `Cours`, l'importeur conserve la structure pédagogique du site : navigation, sections, recettes, TP et `_assets`. Les cours sans session fixe sont rangés dans `Autres cours`.
+
+Avec Code Playground, `_playgrounds` peut aussi être créé à la racine du vault pour stocker les projets interactifs multi-fichiers.
+
+> **Important :** le dossier `Cours` est généré et peut être reconstruit lors d'un nouvel import. Gardez vos annotations personnelles dans un dossier séparé, par exemple `Mes notes`.
+
+---
+
+# CSS Obsidian
+
+Lorsque la destination se trouve dans un vault Obsidian, `run` copie automatiquement :
+
+```text
+obsidian-wide-notes.css
+```
+
+vers :
 
 ```text
 .obsidian/snippets/obsidian-wide-notes.css
 ```
 
-Il suffit ensuite de l'activer une fois dans Obsidian :
+Il suffit ensuite de l'activer une fois :
 
 ```text
 Settings
@@ -172,44 +245,31 @@ Settings
 
 La largeur des pages de cours est configurée à **1400 px**.
 
-Pour synchroniser seulement le CSS :
-
-```bash
-python3 cem_importer.py sync-css
-```
-
 ---
 
-# Commandes utiles
+# Autres commandes
 
-```text
-python3 cem_importer.py configure
-python3 cem_importer.py show-config
-python3 cem_importer.py add-course <repo> "Nom du dossier"
-python3 cem_importer.py remove-course <numéro-ou-nom>
-python3 cem_importer.py import-all
-python3 cem_importer.py sync-css
+La commande principale reste `run`, mais quelques utilitaires sont disponibles :
+
+```bash
+python3 cem_importer.py courses
+```
+
+Affiche les dépôts inclus dans le catalogue.
+
+```bash
 python3 cem_importer.py doctor
 ```
 
-Sous Windows, `python3` peut être remplacé par `py` ou `python` selon l'installation.
-
----
-
-# Importer un seul dépôt sans configuration
-
-Le moteur de conversion peut aussi être utilisé directement :
+Vérifie rapidement Python, Git, le dernier vault utilisé, le CSS et Code Playground.
 
 ```bash
-python3 cem_to_obsidian.py \
-  https://github.com/departement-info-cem/4W6-WebServices.git \
-  -o "/chemin/vers/la/sortie" \
-  --course-name "Notes de cours" \
-  --copy-all-static \
-  --force
+python3 cem_importer.py sync-css
 ```
 
-Aide complète :
+Resynchronise seulement le CSS dans le dernier vault utilisé.
+
+Le moteur de conversion peut également être appelé directement par les développeurs :
 
 ```bash
 python3 cem_to_obsidian.py --help
@@ -217,83 +277,42 @@ python3 cem_to_obsidian.py --help
 
 ---
 
-# Structure générée
+# Rapports de conversion
 
-Un cours ressemble généralement à ceci :
-
-```text
-3M5 - Programmation Mobile/
-└── Notes de cours/
-    ├── 00 - Navigation.md
-    ├── 01 - Cours/
-    ├── 02 - Recettes/
-    ├── 03 - TP/
-    └── _assets/
-        └── _conversion/
-            └── report.md
-```
-
-Avec Code Playground, un dossier `_playgrounds` peut aussi être créé à la racine du vault pour stocker les projets interactifs multi-fichiers.
-
-Les dossiers techniques peuvent être masqués avec un plugin tel que Hide Folders sans empêcher les notes d'accéder à leur contenu.
-
----
-
-# Rapport de conversion
-
-Après chaque import, consultez :
+Chaque cours produit :
 
 ```text
 _assets/_conversion/report.md
 ```
 
-Un import réussi peut afficher :
+pour une lecture humaine, ainsi que :
+
+```text
+_assets/_conversion/report.json
+```
+
+pour le résumé automatique de la CLI.
+
+Un rapport propre indique :
 
 ```text
 Aucun problème de conversion détecté. ✅
 ```
 
-Si un composant MDX n'est pas encore supporté, il sera listé dans ce rapport. Cela permet d'ajouter un nouveau handler sans perdre silencieusement du contenu pédagogique.
+---
+
+# Documentation supplémentaire
+
+- [`docs/COURSES.md`](docs/COURSES.md) — catalogue des dépôts CEM intégrés;
+- [`docs/SUPPORTED_COMPONENTS.md`](docs/SUPPORTED_COMPONENTS.md) — composants Docusaurus / MDX actuellement pris en charge;
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — problèmes fréquents et solutions;
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — architecture interne et développement;
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — conventions pour contribuer au projet.
 
 ---
 
-# Limites importantes
+# Limites
 
-L'objectif est une copie locale utile pour l'étude, pas une reproduction pixel-perfect de Docusaurus.
+Les dépôts de cours évoluent et peuvent introduire de nouveaux composants React / MDX. L'importeur préfère alors conserver le contenu statique disponible et signaler le composant plutôt que d'inventer un résultat ou de supprimer silencieusement de l'information.
 
-Quelques éléments peuvent toujours dépendre d'Internet :
-
-- vidéos YouTube / Vimeo;
-- liens vers des ressources externes;
-- previews Code Playground lorsque le bundler Sandpack configuré est distant; selon la configuration du plugin, le code du playground peut être transmis au service de bundling;
-- téléchargement initial des dépôts Git.
-
-Les fichiers du cours, images et snippets présents dans les dépôts peuvent toutefois être copiés localement.
-
-Consultez [docs/SUPPORTED_COMPONENTS.md](docs/SUPPORTED_COMPONENTS.md) pour le détail des conversions prises en charge.
-
----
-
-# Dépannage
-
-Commencez par :
-
-```bash
-python3 cem_importer.py doctor
-```
-
-Puis consultez [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
-
----
-
-# Développement
-
-Les détails d'architecture et les commandes de test sont dans [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-
-Pour exécuter tous les tests :
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-Les contributions sont bienvenues; voir [CONTRIBUTING.md](CONTRIBUTING.md).
+Les previews **Code Playground** utilisent Sandpack. Selon la configuration du plugin, leur compilation peut utiliser un service de bundling externe. Consultez la documentation du plugin si le code doit rester entièrement local.

@@ -28,7 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = PROJECT_ROOT / ".cem-importer.json"
 ENGINE_PATH = PROJECT_ROOT / "cem_to_obsidian.py"
 CSS_SOURCE = PROJECT_ROOT / "obsidian-wide-notes.css"
-DEFAULT_NOTES_FOLDER = "Notes de cours"
+DEFAULT_NOTES_FOLDER = "Cours"
 VERSION = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 
@@ -39,24 +39,31 @@ class Course:
     code: str
     folder: str
     repo: str
+    session: int | None
+
+    @property
+    def session_folder(self) -> str:
+        """Human folder used to group courses by academic session."""
+
+        return f"Session {self.session}" if self.session is not None else "Autres cours"
 
 
 # The launcher is intentionally scoped to the repositories maintained by the
 # CEM department. Add new official course repositories here as they are adopted.
 COURSES: tuple[Course, ...] = (
-    Course("1P6", "1P6", "https://github.com/departement-info-cem/1P6.git"),
-    Course("2P6", "2P6", "https://github.com/departement-info-cem/2P6.git"),
-    Course("3M5", "3M5 - Programmation Mobile", "https://github.com/departement-info-cem/3M5-Intro-Mobile.git"),
-    Course("3S4", "3S4 - Cybersec", "https://github.com/departement-info-cem/3s4-cybersec.git"),
-    Course("3U4", "3U4 - Cybersec", "https://github.com/departement-info-cem/3U4-cybersec.git"),
-    Course("3W6", "3W6 - Programmation Web Transactionnelle", "https://github.com/departement-info-cem/3W6-Web-Transactionelle.git"),
-    Course("4D5", "4D5 - Base de Données et Prog Web", "https://github.com/departement-info-cem/4D5-Base-De-Donnees-Et-Prog-Web.git"),
-    Course("4W6", "4W6 - Programmation Web Orienté Services", "https://github.com/departement-info-cem/4W6-WebServices.git"),
-    Course("5N6", "5N6 - Mobile 2", "https://github.com/departement-info-cem/5N6-mobile-2.git"),
-    Course("5W5", "5W5 - Web Avancée", "https://github.com/departement-info-cem/5W5-Web-Avancee.git"),
-    Course("420-4A4", "420-4A4", "https://github.com/departement-info-cem/420-4A4.git"),
-    Course("420-SN1", "420-SN1", "https://github.com/departement-info-cem/420-SN1.git"),
-    Course("Z03", "Z03", "https://github.com/departement-info-cem/z03.git"),
+    Course("1P6", "1P6 - Introduction à la programmation", "https://github.com/departement-info-cem/1P6.git", 1),
+    Course("2P6", "2P6 - Programmation orientée objet", "https://github.com/departement-info-cem/2P6.git", 2),
+    Course("3W6", "3W6 - Programmation Web transactionnelle", "https://github.com/departement-info-cem/3W6-Web-Transactionelle.git", 3),
+    Course("3S4", "3S4 - Introduction à la cybersécurité", "https://github.com/departement-info-cem/3s4-cybersec.git", 3),
+    Course("3U4", "3U4 - Introduction à la cybersécurité", "https://github.com/departement-info-cem/3U4-cybersec.git", 3),
+    Course("420-SN1", "420-SN1 - Programmation en sciences", "https://github.com/departement-info-cem/420-SN1.git", 3),
+    Course("3M5", "3M5 - Introduction à la programmation mobile", "https://github.com/departement-info-cem/3M5-Intro-Mobile.git", 4),
+    Course("4W6", "4W6 - Programmation Web orientée services", "https://github.com/departement-info-cem/4W6-WebServices.git", 4),
+    Course("420-4A4", "420-4A4 - Réseaux de neurones et sciences", "https://github.com/departement-info-cem/420-4A4.git", 4),
+    Course("4D5", "4D5 - Base de données et programmation Web", "https://github.com/departement-info-cem/4D5-Base-De-Donnees-Et-Prog-Web.git", 5),
+    Course("5W5", "5W5 - Programmation Web avancée", "https://github.com/departement-info-cem/5W5-Web-Avancee.git", 5),
+    Course("5N6", "5N6 - Applications mobiles avancées", "https://github.com/departement-info-cem/5N6-mobile-2.git", 6),
+    Course("Z03", "Z03 - Introduction à la programmation web", "https://github.com/departement-info-cem/z03.git", None),
 )
 
 
@@ -178,10 +185,14 @@ def _parse_selection(raw: str, total: int) -> list[int]:
 
 
 def prompt_courses() -> list[Course]:
-    """Show a dependency-free checkbox-like multi-select menu."""
+    """Show a dependency-free checkbox-like multi-select menu grouped by session."""
 
     print("\nCours disponibles\n")
+    current_group: str | None = None
     for index, course in enumerate(COURSES, start=1):
+        if course.session_folder != current_group:
+            current_group = course.session_folder
+            print(f"{current_group}")
         print(f"  [ ] {index:>2}. {course.folder}")
 
     print("\nChoisis un ou plusieurs cours.")
@@ -205,7 +216,7 @@ def prompt_courses() -> list[Course]:
 
         print("\nSélection :")
         for course in selected:
-            print(f"  [x] {course.folder}")
+            print(f"  [x] {course.session_folder} / {course.folder}")
         answer = input("\nLancer l'import ? [O/n] ").strip().lower()
         if answer in {"", "o", "oui", "y", "yes"}:
             return selected
@@ -213,7 +224,7 @@ def prompt_courses() -> list[Course]:
 
 
 def report_path_for(course: Course, destination: Path) -> Path:
-    return destination / course.folder / DEFAULT_NOTES_FOLDER / "_assets" / "_conversion" / "report.json"
+    return destination / course.session_folder / course.folder / DEFAULT_NOTES_FOLDER / "_assets" / "_conversion" / "report.json"
 
 
 def read_conversion_summary(path: Path) -> dict[str, int]:
@@ -243,7 +254,7 @@ def read_conversion_summary(path: Path) -> dict[str, int]:
 
 
 def run_course_import(course: Course, destination: Path) -> ImportResult:
-    output_parent = destination / course.folder
+    output_parent = destination / course.session_folder / course.folder
     cmd = [
         sys.executable,
         str(ENGINE_PATH),
@@ -257,7 +268,7 @@ def run_course_import(course: Course, destination: Path) -> ImportResult:
     ]
 
     print(f"\n{'─' * 72}")
-    print(f"Import : {course.folder}")
+    print(f"Import : {course.session_folder} / {course.folder}")
     print(f"Repo   : {course.repo}")
     print(f"{'─' * 72}")
 

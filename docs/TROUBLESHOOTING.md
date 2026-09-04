@@ -96,7 +96,7 @@ Sans le plugin, les exemples restent disponibles sous forme de blocs de code / o
 Ouvrez ensuite :
 
 ```text
-<dossier du cours>/Notes de cours/_assets/_conversion/report.md
+<dossier du cours>/Cours/_assets/_conversion/report.md
 ```
 
 Le rapport détaille notamment :
@@ -123,7 +123,7 @@ Le dépôt fautif est affiché avec son URL afin de faciliter le diagnostic.
 Le dossier :
 
 ```text
-Notes de cours/
+Cours/
 ```
 
 est généré et peut être reconstruit avec `--force` lors d'un nouvel import. Ne placez pas vos notes personnelles directement dedans.
@@ -131,7 +131,7 @@ est généré et peut être reconstruit avec `--force` lors d'un nouvel import. 
 Utilisez plutôt un dossier voisin, par exemple :
 
 ```text
-3M5 - Programmation Mobile/
-├── Notes de cours/   ← généré
+3M5 - Introduction à la programmation mobile/
+├── Cours/            ← généré
 └── Mes notes/        ← personnel
 ```

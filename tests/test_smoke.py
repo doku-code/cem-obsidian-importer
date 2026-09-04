@@ -741,6 +741,43 @@ class PublicConfigurationTests(unittest.TestCase):
         self.assertIn("https://github.com/departement-info-cem/4W6-WebServices.git", repos)
         self.assertIn("https://github.com/departement-info-cem/z03.git", repos)
 
+    def test_course_catalog_uses_human_course_names(self):
+        folders = {course.code: course.folder for course in manager.COURSES}
+        self.assertEqual(folders["1P6"], "1P6 - Introduction à la programmation")
+        self.assertEqual(folders["3M5"], "3M5 - Introduction à la programmation mobile")
+        self.assertEqual(folders["4W6"], "4W6 - Programmation Web orientée services")
+        self.assertEqual(folders["5N6"], "5N6 - Applications mobiles avancées")
+        self.assertEqual(folders["Z03"], "Z03 - Introduction à la programmation web")
+
+    def test_course_catalog_groups_courses_by_session(self):
+        sessions = {course.code: course.session for course in manager.COURSES}
+        self.assertEqual(sessions["1P6"], 1)
+        self.assertEqual(sessions["2P6"], 2)
+        self.assertEqual(sessions["3W6"], 3)
+        self.assertEqual(sessions["3M5"], 4)
+        self.assertEqual(sessions["4D5"], 5)
+        self.assertEqual(sessions["5N6"], 6)
+        self.assertIsNone(sessions["Z03"])
+
+    def test_report_path_includes_session_folder(self):
+        with tempfile.TemporaryDirectory() as td:
+            destination = Path(td)
+            course = next(course for course in manager.COURSES if course.code == "3M5")
+            path = manager.report_path_for(course, destination)
+            self.assertEqual(
+                path,
+                destination
+                / "Session 4"
+                / "3M5 - Introduction à la programmation mobile"
+                / "Cours"
+                / "_assets"
+                / "_conversion"
+                / "report.json",
+            )
+
+    def test_launcher_generated_content_folder_is_cours(self):
+        self.assertEqual(manager.DEFAULT_NOTES_FOLDER, "Cours")
+
     def test_multi_selection_accepts_numbers_ranges_and_commas(self):
         self.assertEqual(manager._parse_selection("1, 3 5-7", 10), [0, 2, 4, 5, 6])
 
